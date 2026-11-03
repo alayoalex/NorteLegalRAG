@@ -22,7 +22,7 @@ backend/                     Python 3.12, uv. Una imagen para api, worker y migr
     api/                     FastAPI: rutas, esquemas Pydantic, dependencias
     worker/                  Aplicación Celery y tareas
     domain/                  Puertos (interfaces), errores, lógica pura (fragmentación, prompts, validación)
-    adapters/                Implementaciones de los puertos: fake, anthropic, voyage, traced (decorador OTel)
+    adapters/                Implementaciones de los puertos: fake, openrouter, voyage, traced (decorador OTel)
     db/                      Modelos SQLAlchemy y sesión
     observability/           OpenTelemetry y logging estructurado
   migrations/                Alembic. Migraciones versionadas
@@ -111,15 +111,20 @@ instrumentado. Detalle en `docs/architecture.md`.
   Son contratos orientados al dominio, no un `complete()` genérico.
 - **Simulado** (`adapters/fake.py`): determinista. Embeddings por *feature hashing* (similitud léxica) y LLM
   extractivo. `FAKE_LLM_FAILURE_MODE` inyecta timeout, límite de tasa o caída para probar la resiliencia sin claves.
-- **Reales (hito M3):** SDK oficial de Anthropic para el LLM y SDK de Voyage AI para embeddings. **No usar LiteLLM**
-  (motivo en DECISIONS.md: incidentes de cadena de suministro en 2026 y una capa de abstracción innecesaria con
-  nuestro propio puerto).
-- Modelo LLM por defecto: `claude-opus-5-5`, configurable con `LLM_MODEL`. En este modelo el *thinking* no se puede
-  desactivar; la profundidad se controla con `output_config.effort`. Su valor por defecto es `medium` y debe fijarse
-  explícitamente. Salida estructurada con `client.messages.parse()` y `output_config.format`, sin *prefill* ni
-  `tool_choice` forzado (ambos dan 400 en este modelo). La API de Citations de Anthropic **no** se usa: es
-  incompatible con `output_config.format` y nuestras citas apuntan a fragmentos propios. Comprueba siempre
-  `stop_reason` (incluido `refusal`) antes de leer el contenido.
+- **Reales (hito M3):** **OpenRouter** para el LLM y SDK de Voyage AI para embeddings. A OpenRouter se llama con el
+  SDK oficial de `openai` apuntando a `base_url=https://openrouter.ai/api/v1` (API compatible con OpenAI), clave en
+  `OPENROUTER_API_KEY`. El adaptador se llama `adapters/openrouter.py`. **No usar LiteLLM** (motivo en DECISIONS.md:
+  incidentes de cadena de suministro en 2026 y una capa de abstracción innecesaria con nuestro propio puerto).
+  OpenRouter es un servicio, no una dependencia: no cambia ese argumento.
+- Modelo LLM por defecto: `anthropic/claude-opus-5.5` (identificador de OpenRouter; confírmalo contra
+  `GET /api/v1/models` al implementar M3), configurable con `LLM_MODEL`. En este modelo el *thinking* no se puede
+  desactivar; la profundidad se fija explícitamente con `reasoning.effort = "medium"`. Salida estructurada con
+  `response_format` de tipo `json_schema` (`strict: true`) generado desde el modelo Pydantic, y
+  `provider.require_parameters = true` para que OpenRouter solo enrute a proveedores que lo soporten. Sin *prefill*
+  ni `tool_choice` forzado. Privacidad: `provider.data_collection = "deny"` y solo proveedores sin retención de datos
+  (los documentos son confidenciales). Comprueba siempre `finish_reason` (`length`, `content_filter`, `error`) y
+  `message.refusal` antes de leer el contenido, y valida el JSON con Pydantic: el esquema es una ayuda, no una
+  garantía.
 - Embeddings: `voyage-4` (multilingüe) frente a `voyage-law-2` (legal). Ambos tienen 1024 dimensiones, la columna es
   `vector(1024)`. Se decide midiendo con `eval/`. Usa `input_type="document"` y `input_type="query"`. Cada fragmento
   guarda `embedding_model` y la consulta filtra por el modelo activo.
@@ -134,7 +139,7 @@ instrumentado. Detalle en `docs/architecture.md`.
 | M0 | Esqueleto: compose, migración inicial, puertos, simulados, traza HTTP → Celery → LLM probada, CI. Despliegue en https://nortelegal.mizpa.io | hecho |
 | M1 | Ingesta: validación de archivo (magic bytes, tamaño, zip bomb), almacén de blobs, versionado e idempotencia, extracción PDF/DOCX/TXT, fragmentador con offsets, tarea con lease y reintentos, reconciliador | pendiente |
 | M2 | Frontend: carga, lista con estado por *polling*, errores visibles y reintento | pendiente |
-| M3 | Consulta: búsqueda híbrida (HNSW + FTS + RRF), constructor de prompt, validación de citas, adaptadores Anthropic y Voyage, degradación ante fallos, pantalla de preguntas | pendiente |
+| M3 | Consulta: búsqueda híbrida (HNSW + FTS + RRF), constructor de prompt, validación de citas, adaptadores OpenRouter y Voyage, degradación ante fallos, pantalla de preguntas | pendiente |
 | M4 | Observabilidad (métricas de ingesta y recuperación), pulido de errores, mitigación de inyección con documento canario | pendiente |
 | M5 | Dataset, preguntas de evaluación, script de métricas, resultados en DECISIONS.md, README final | pendiente |
 | M6 | Verificación desde un clon limpio, CI en verde, congelación. **Dejar al menos 6 h de margen antes del plazo** | pendiente |

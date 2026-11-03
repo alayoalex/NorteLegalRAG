@@ -16,7 +16,7 @@ flowchart LR
     worker -->|SQL| pg
     worker -->|embeddings| emb[[Proveedor de embeddings<br/>fake / Voyage]]
     api -->|embedding de consulta| emb
-    api -->|generación| llm[[Proveedor LLM<br/>fake / Anthropic]]
+    api -->|generación| llm[[Proveedor LLM<br/>fake / OpenRouter]]
     api -. OTLP .-> otel[otel-collector]
     worker -. OTLP .-> otel
     otel --> jaeger[Jaeger UI]
@@ -40,7 +40,7 @@ flowchart TB
     end
     subgraph salida [Adaptadores de salida]
         repo[db/ repositorios SQLAlchemy]
-        prov[adapters/ fake · anthropic · voyage]
+        prov[adapters/ fake · openrouter · voyage]
         traced[adapters/traced<br/>decorador OTel]
         store[almacén de blobs]
     end

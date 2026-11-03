@@ -83,7 +83,33 @@ despliegue es manual con `scripts/deploy.sh`, que construye, espera a los *healt
 despliegue continuo desde GitHub Actions exigiría guardar una clave SSH del servidor en un repositorio público. Para
 una demo no compensa.
 
-## 8. Uso de IA generativa
+## 8. Proveedor del LLM: OpenRouter
+
+**Decisión:** el LLM se consume a través de OpenRouter con el SDK oficial de `openai` (OpenRouter expone una API
+compatible). El modelo por defecto sigue siendo Claude Opus, configurable con `LLM_MODEL`. Los embeddings siguen en
+Voyage AI con su SDK.
+
+**Por qué:** una sola clave y una sola factura para probar varios modelos durante la evaluación (M5) cambiando solo
+`LLM_MODEL`, y enrutado entre varios proveedores del mismo modelo si uno cae o limita la tasa. No reabre la decisión
+sobre LiteLLM: OpenRouter es un servicio externo detrás de nuestro puerto `LLMProvider`, no una biblioteca más en la
+cadena de suministro, y el SDK de `openai` es una dependencia oficial y fijada en `uv.lock`.
+
+**Qué se sacrificó:**
+
+- **Un intermediario más con datos confidenciales.** Se mitiga con `provider.data_collection = "deny"` y
+  restringiendo el enrutado a proveedores sin retención de datos.
+- **Funciones propias de Anthropic.** Se pierde `messages.parse()` y `output_config`. La salida estructurada pasa a
+  `response_format` con `json_schema` y `provider.require_parameters = true`. La respuesta se valida siempre con
+  Pydantic, así que un proveedor que ignore el esquema produce un error controlado, no una cita inventada.
+- **Algo de latencia** por el salto adicional, que cuenta dentro del presupuesto de tiempo de la API.
+
+**Reintentos:** el enrutado interno de OpenRouter entre proveedores no es un reintento nuestro. Se mantiene la regla
+de no apilar capas: `max_retries=0` en el SDK, backoff de Celery en el worker y un único reintento en la API.
+
+**Cuándo revisarla:** si un cliente exige contrato de tratamiento de datos directo con el proveedor del modelo, se
+añade un adaptador directo detrás del mismo puerto sin tocar el dominio.
+
+## 9. Uso de IA generativa
 
 _Se completa al final: qué se generó con IA, qué se reescribió y cómo se verificó (pruebas, lectura línea a línea y
 mediciones)._
