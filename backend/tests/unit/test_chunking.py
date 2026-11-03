@@ -6,6 +6,7 @@ from norte_legal.domain.chunking import (
     TARGET_CHARS,
     chunk_text,
     pipeline_fingerprint,
+    section_at,
 )
 
 # Texto con estructura: palabras, signos, saltos de línea y encabezados al inicio de línea.
@@ -80,3 +81,10 @@ def test_formats_without_pages_have_no_page_numbers() -> None:
 
 def test_fingerprint_changes_with_the_embedding_model() -> None:
     assert pipeline_fingerprint("extract-v1", "a") != pipeline_fingerprint("extract-v1", "b")
+
+
+def test_section_at_returns_the_heading_that_precedes_an_offset() -> None:
+    text = "Section 1. Term\nTwo years.\n\nSection 2. Rent\nMonthly."
+    assert section_at(text, text.index("Monthly")) == "Section 2. Rent"
+    assert section_at(text, text.index("Two")) == "Section 1. Term"
+    assert section_at("No headings here.", 5) is None

@@ -4,7 +4,7 @@ Decisiones sobre los puntos abiertos del enunciado, trade-offs y uso de IA gener
 eligió, por qué, qué se sacrificó y cuándo convendría revisarla. Las marcadas como **hipótesis** se confirman o
 corrigen con las mediciones de `eval/` (hito M5).
 
-> Estado: borrador del hito M1. Las secciones de medición están vacías hasta tener datos.
+> Estado: borrador del hito M3. Las secciones de medición están vacías hasta tener datos.
 
 ## 1. Fragmentación y recuperación
 
@@ -61,6 +61,13 @@ fragmentos) y en casos dudosos. Se propone un muestreo de respuestas con citas m
 _Se completa durante la implementación: SDK directo frente a LiteLLM, FastAPI síncrono y volumen compartido frente
 a almacenamiento de objetos. El reconciliador frente a outbox está en la sección 9._
 
+**Voyage por REST frente a su SDK.** El SDK `voyageai` 0.5 instala unas 35 dependencias para una sola llamada HTTP,
+entre ellas `langchain-core`, `langsmith`, `huggingface-hub`, `tokenizers`, `numpy`, `pillow` y `aiohttp`. Es la
+misma superficie de cadena de suministro por la que se descartó LiteLLM. El adaptador llama a
+`POST /v1/embeddings` con `httpx2`, que ya entra como dependencia del SDK de `openai`, y valida la respuesta con
+Pydantic (unas 60 líneas, probadas con un transporte HTTP simulado). **Coste:** si Voyage cambia su API, el
+adaptador se actualiza a mano.
+
 **Polling frente a SSE.** La lista de documentos se consulta cada 2 s mientras alguna versión está pendiente y cada
 30 s cuando todo terminó (TanStack Query, `refetchInterval`). SSE o WebSockets darían menos latencia, pero exigirían
 una conexión abierta por pestaña y un canal desde el worker a la API (Redis pub/sub), que hoy no existe porque Redis
@@ -71,6 +78,12 @@ el mismo `GET` que ya hace falta para pintar la lista.
 
 `HNSW` con `vector_cosine_ops`, `m=16`, `ef_construction=128`, `hnsw.ef_search=100` en consulta, **parcial**
 `WHERE is_current`. Justificación ampliada en la sección de recuperación cuando haya mediciones.
+
+El filtro por tenant y por modelo de embeddings se aplica después de recorrer el grafo. Con
+`hnsw.iterative_scan = relaxed_order` (pgvector 0.8), el índice sigue explorando hasta reunir los resultados
+pedidos, en lugar de devolver menos cuando el tenant es pequeño. El planificador elige por coste: en un tenant
+pequeño usa el B-tree de `tenant_id` y ordena todo de forma exacta, y en uno grande usa HNSW. Una prueba comprueba
+que el índice parcial es utilizable con el predicado `is_current`.
 
 ## 7. Despliegue de la demo
 
@@ -154,7 +167,52 @@ apunte a bytes que no existen.
 **Extracción en `domain/`.** `pypdf` y `python-docx` son parsers puros, sin red ni E/S propia. No son SDK de servicios
 externos, así que no necesitan un puerto. Se eligió `pypdf` (BSD) frente a PyMuPDF (AGPL).
 
-## 10. Uso de IA generativa
+## 10. Consulta
+
+**Recuperación.** Se toman los 30 primeros por similitud coseno y los 30 primeros por texto completo y se fusionan
+con RRF (k=60). Pasan al LLM los 8 mejores. La consulta léxica une en OR los términos de la pregunta de 3 o más
+letras, sin una lista corta de palabras vacías en español e inglés. Con AND, una pregunta en lenguaje natural casi
+nunca coincide entera. Los términos solo contienen caracteres `\w`, así que no pueden inyectar sintaxis de
+`tsquery`. **Limitación conocida:** la configuración `simple` no aplica raíces ni quita acentos ("cláusula" no
+coincide con "clausula"). Se mantiene porque es neutral entre idiomas, y la parte semántica cubre esas variantes.
+
+**Las tres compuertas** (invariante 6):
+1. Un fragmento que solo llega por similitud y no alcanza `RETRIEVAL_MIN_SIMILARITY` (0,25, **hipótesis** que se
+   calibrará en M5) se descarta. Una coincidencia léxica siempre cuenta. Sin fragmentos, se responde `no_context`
+   sin llamar al LLM.
+2. El LLM puede declarar `insufficient_context`.
+3. Validación posterior. Cada cita debe referirse a una `ref` recuperada y su texto debe aparecer en el fragmento.
+   La comparación tolera mayúsculas, espacios, comillas tipográficas y puntuación alrededor, y no admite
+   paráfrasis ni citas de menos de 8 caracteres. Sin al menos una cita verificada no hay respuesta
+   (`reason: unverified_citations`).
+
+**Posiciones de cita.** Salen de la base de datos y de la verificación: el offset del fragmento más la posición
+donde se encontró la cita. La sección es el último encabezado anterior a la cita, no el del inicio del fragmento,
+porque un fragmento puede abarcar varias cláusulas.
+
+**Degradación.**
+- Si fallan los embeddings, la búsqueda sigue solo con texto completo (`retrieval_mode: lexical`) y la interfaz lo
+  indica.
+- Si falla el LLM, la respuesta es `degraded`, con los fragmentos recuperados y sin texto generado.
+
+Los tres estados devuelven 200: no son errores del cliente, y la interfaz los distingue por `status`.
+
+**Presupuesto de tiempo.** 55 s para toda la consulta, por debajo de los 60 s de `proxy_read_timeout`. Cada
+intento del LLM tiene 40 s, y el único reintento solo se hace si cabe entero (incluido `Retry-After`). En la práctica
+se reintentan los fallos rápidos (429, 5xx) y no un timeout. **Coste:** Opus con esfuerzo `medium` puede acercarse
+a los 40 s. Si en M5 se ve que pasa a menudo, se baja el esfuerzo o se cambia de modelo con `LLM_MODEL`.
+
+**Prompt.** Los fragmentos van en etiquetas `<source ref="S1" label="documento · sección · página">`. En su texto se
+sustituye `<` por `‹`, de modo que un documento no puede cerrar su etiqueta ni abrir una `<question>` falsa. El
+esquema JSON estricto se escribe a mano en el adaptador: el modo estricto exige todos los campos y
+`additionalProperties: false`, y así el contrato con el modelo se lee en un solo sitio.
+
+**Reprocesar al cambiar de modelo de embeddings.** Cada fragmento guarda su `embedding_model` y la búsqueda
+vectorial filtra por el modelo activo. Al pasar de los embeddings simulados a Voyage, los documentos antiguos solo
+se encuentran por texto completo hasta que se vuelven a subir. Como la huella del pipeline cambia, la nueva subida
+crea una versión nueva.
+
+## 11. Uso de IA generativa
 
 _Se completa al final: qué se generó con IA, qué se reescribió y cómo se verificó (pruebas, lectura línea a línea y
 mediciones)._

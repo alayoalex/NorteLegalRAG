@@ -8,6 +8,7 @@ from alembic.config import Config
 from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
 
+from norte_legal.adapters.factory import get_embedding_provider, get_llm_provider
 from norte_legal.config import get_settings
 from norte_legal.db.session import get_engine
 
@@ -52,8 +53,12 @@ def migrated_settings(
     monkeypatch.setenv("OTEL_ENABLED", "false")
     get_settings.cache_clear()
     get_engine.cache_clear()
+    get_llm_provider.cache_clear()
+    get_embedding_provider.cache_clear()
     command.upgrade(alembic_config, "head")
     yield
     monkeypatch.undo()
     get_settings.cache_clear()
     get_engine.cache_clear()
+    get_llm_provider.cache_clear()
+    get_embedding_provider.cache_clear()

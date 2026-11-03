@@ -7,7 +7,7 @@ from celery import Task
 from kombu.exceptions import OperationalError
 
 from norte_legal.adapters.blob_store import LocalBlobStore
-from norte_legal.adapters.factory import build_embedding_provider, build_llm_provider
+from norte_legal.adapters.factory import get_embedding_provider, get_llm_provider
 from norte_legal.config import get_settings
 from norte_legal.db.session import new_session
 from norte_legal.domain.ports import PromptSource, RagPrompt
@@ -20,7 +20,7 @@ logger = structlog.get_logger(__name__)
 @celery_app.task(name="system.ping")
 def ping() -> None:
     """Prueba de humo del recorrido HTTP -> cola -> worker -> LLM. No toca datos."""
-    answer = build_llm_provider(get_settings()).generate_answer(
+    answer = get_llm_provider().generate_answer(
         RagPrompt(
             system="diagnostic",
             question="diagnostic ping request",
@@ -38,7 +38,7 @@ def ingest_version(self: Task, version_id: str) -> None:
     result = ingestion.process_version(
         uuid.UUID(version_id),
         blobs=LocalBlobStore(settings.blob_dir),
-        embedder=build_embedding_provider(settings),
+        embedder=get_embedding_provider(),
     )
     if result.retry_in_s is not None:
         raise self.retry(countdown=result.retry_in_s)

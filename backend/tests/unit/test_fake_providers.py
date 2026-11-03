@@ -78,3 +78,11 @@ class TestFakeLLM:
         with pytest.raises(expected) as caught:
             FakeLLMProvider(mode).generate_answer(_prompt("q"))  # type: ignore[arg-type]
         assert caught.value.retryable  # type: ignore[attr-defined]
+
+
+def test_numbers_and_clause_numbers_do_not_split_sentences() -> None:
+    source = "Section 4.2 Rent. The tenant pays a monthly rent of 1.200 euros."
+    answer = FakeLLMProvider().generate_answer(
+        _prompt("What monthly rent does the tenant pay?", source)
+    )
+    assert answer.citations[0].quote == "The tenant pays a monthly rent of 1.200 euros."

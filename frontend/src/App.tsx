@@ -1,7 +1,7 @@
 import { DocumentList } from "./components/DocumentList";
+import { QuestionForm } from "./components/QuestionForm";
 import { UploadForm } from "./components/UploadForm";
 
-// La pantalla de preguntas llega en el hito M3.
 export function App() {
   return (
     <main>
@@ -9,6 +9,7 @@ export function App() {
         <h1>NorteLegal</h1>
         <p className="muted">Asistente de conocimiento para contratos y políticas.</p>
       </header>
+      <QuestionForm />
       <UploadForm />
       <DocumentList />
     </main>

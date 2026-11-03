@@ -223,3 +223,105 @@ th {
     padding: 0.2rem 0;
   }
 }
+
+.ask-form {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+
+.ask-form textarea {
+  flex: 1;
+  font: inherit;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  resize: vertical;
+}
+
+.result {
+  margin-top: 1rem;
+}
+
+.answer {
+  white-space: pre-wrap;
+  font-size: 1.05rem;
+}
+
+h3 {
+  font-size: 0.95rem;
+  margin-bottom: 0.25rem;
+}
+
+.citations,
+.sources {
+  padding-left: 1.25rem;
+}
+
+.sources {
+  list-style: none;
+  padding-left: 0;
+}
+
+.citations li,
+.sources li {
+  margin-top: 0.75rem;
+}
+
+.location .badge {
+  margin-left: 0.5rem;
+}
+
+blockquote {
+  margin: 0.35rem 0;
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--accent);
+}
+
+.chunk-text {
+  white-space: pre-wrap;
+  font-size: 0.875rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+}
+
+mark {
+  background: var(--warn-bg);
+  color: var(--text);
+  outline: 1px solid var(--warn);
+}
+
+.notice {
+  background: var(--info-bg);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+}
+
+.notice--warn {
+  background: var(--warn-bg);
+}
+
+button.link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  padding: 0;
+  text-decoration: underline;
+}
+
+details summary {
+  cursor: pointer;
+  margin-top: 1rem;
+  color: var(--muted);
+}
+
+@media (max-width: 640px) {
+  .ask-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

@@ -32,10 +32,29 @@ const ERROR_MESSAGES: Record<string, string> = {
   provider_rate_limited: "El servicio de embeddings limitó las peticiones.",
   provider_unavailable: "El servicio de embeddings no está disponible.",
   provider_permanent: "El servicio de embeddings rechazó la petición.",
+  // Consulta
+  validation_error: "Escribe una pregunta de al menos 3 caracteres.",
   // Reintento
   not_retryable: "Este documento ya no está en error.",
   document_not_found: "El documento ya no existe.",
 };
+
+const NO_CONTEXT_MESSAGES: Record<string, string> = {
+  no_sources: "No hay fragmentos de tus documentos relacionados con la pregunta.",
+  model_insufficient_context:
+    "Los fragmentos encontrados no bastan para responder con seguridad. Revisa los fragmentos consultados.",
+  unverified_citations:
+    "No se muestra una respuesta porque no se pudo verificar ninguna cita contra los documentos.",
+};
+
+export function noContextMessage(reason: string | null): string {
+  return (reason && NO_CONTEXT_MESSAGES[reason]) ?? "No se encontró información suficiente.";
+}
+
+export function pagesLabel(start: number | null, end: number | null): string | null {
+  if (start === null) return null;
+  return start === end || end === null ? `pág. ${start}` : `págs. ${start}-${end}`;
+}
 
 export function errorMessage(code: string | null | undefined): string {
   return (code && ERROR_MESSAGES[code]) ?? "Se produjo un error inesperado.";

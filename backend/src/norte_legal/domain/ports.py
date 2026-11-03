@@ -18,6 +18,9 @@ class PromptSource(BaseModel):
 
     ref: str
     text: str
+    # Contexto legible para el modelo ("contrato.pdf · Section 4 · pág. 3"). No es una posición:
+    # documento, fragmento y offsets los resuelve el servidor a partir de `ref`.
+    label: str = ""
 
 
 class RagPrompt(BaseModel):

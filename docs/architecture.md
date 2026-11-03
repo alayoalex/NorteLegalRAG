@@ -160,17 +160,17 @@ sequenceDiagram
     participant PG as PostgreSQL
     participant L as LLM
     UI->>API: POST /api/v1/query {question}
-    API->>E: embed_query
-    API->>PG: top-k vectorial (HNSW) ∪ top-k léxico (FTS) → RRF
-    alt sin candidatos o similitud bajo umbral
-        API-->>UI: 200 {status: no_context}
+    API->>E: embed_query (si falla: solo búsqueda léxica, retrieval_mode = lexical)
+    API->>PG: TX: top-30 vectorial (HNSW) ∪ top-30 léxico (FTS en OR) → RRF → 8 fragmentos
+    alt sin candidatos o solo vectoriales bajo el umbral
+        API-->>UI: 200 {status: no_context, reason: no_sources}  (sin llamar al LLM)
     else hay contexto
         API->>L: prompt con fuentes delimitadas S1..Sn
         alt el LLM responde
-            API->>API: valida refs ⊆ recuperadas, verifica cita textual
-            API-->>UI: 200 {status: answered | no_context, answer, citations[]}
-        else timeout / 429 / 5xx tras el presupuesto
-            API-->>UI: 200 {status: degraded, answer: null, citations: fragmentos recuperados}
+            API->>API: valida refs ⊆ recuperadas, localiza la cita textual en el fragmento
+            API-->>UI: 200 {status: answered | no_context, answer, citations[], sources[]}
+        else timeout / 429 / 5xx tras el presupuesto de 55 s
+            API-->>UI: 200 {status: degraded, answer: null, sources: fragmentos recuperados}
         end
     end
 ```

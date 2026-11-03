@@ -26,7 +26,8 @@ from norte_legal.domain.ports import (
 FailureMode = Literal["none", "timeout", "rate_limit", "unavailable"]
 
 _TOKEN = re.compile(r"\w+", re.UNICODE)
-_SENTENCE = re.compile(r"[^.!?\n]+[.!?]?")
+# Fin de frase: signo seguido de espacio. Así "1.200 euros" o "Section 4.2" no se parten.
+_SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+|\n+")
 _MIN_TOKEN_LENGTH = 4
 _MIN_OVERLAP = 2
 
@@ -83,8 +84,8 @@ class FakeLLMProvider:
 
         best: tuple[int, str, str] | None = None
         for source in prompt.sources:
-            for match in _SENTENCE.finditer(source.text):
-                sentence = match.group().strip()
+            for piece in _SENTENCE_BREAK.split(source.text):
+                sentence = piece.strip()
                 overlap = len(question_tokens & _content_tokens(sentence))
                 if sentence and (best is None or overlap > best[0]):
                     best = (overlap, source.ref, sentence)

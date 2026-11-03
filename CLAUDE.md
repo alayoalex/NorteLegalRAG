@@ -33,6 +33,7 @@ backend/                     Python 3.12, uv. Una imagen para api, worker y migr
 frontend/                    React + Vite + TypeScript + TanStack Query, servido por nginx
   src/api.ts                 Cliente tipado; los tipos reflejan api/schemas.py. Errores por `code`
   src/messages.ts            Textos en español para cada estado y cada `code` de la API
+  src/components/            QuestionForm (preguntas y citas), UploadForm, DocumentList
 infra/otel/                  Configuración del colector de OpenTelemetry
 docs/architecture.md         Diagramas y flujos (versionado)
 docs/dataset.md              Dataset de evaluación y licencias
@@ -44,7 +45,8 @@ scripts/deploy.sh            Despliegue en el servidor detrás del Caddy compart
 ## Comandos
 
 ```bash
-docker compose up --build                     # Todo el stack, sin claves (proveedores simulados)
+docker compose -p norte-legal-dev up --build  # Todo el stack, sin claves (proveedores simulados)
+# ¡Ojo! En el servidor, `docker compose up` sin -p sustituye los contenedores de PRODUCCIÓN (mismo proyecto).
 # UI http://localhost:8080 · API http://localhost:8000/docs · Jaeger http://localhost:16686 · métricas :8889/metrics
 
 cd backend
@@ -117,15 +119,16 @@ instrumentado. Detalle en `docs/architecture.md`.
   Son contratos orientados al dominio, no un `complete()` genérico.
 - **Simulado** (`adapters/fake.py`): determinista. Embeddings por *feature hashing* (similitud léxica) y LLM
   extractivo. `FAKE_LLM_FAILURE_MODE` inyecta timeout, límite de tasa o caída para probar la resiliencia sin claves.
-- **Reales (hito M3):** **OpenRouter** para el LLM y SDK de Voyage AI para embeddings. A OpenRouter se llama con el
+- **Reales:** **OpenRouter** para el LLM y **Voyage AI por su API REST** (`adapters/voyage.py`, con `httpx2`) para
+  embeddings. **No se usa el SDK `voyageai`**: arrastra unas 35 dependencias (DECISIONS.md §5). A OpenRouter se llama con el
   SDK oficial de `openai` apuntando a `base_url=https://openrouter.ai/api/v1` (API compatible con OpenAI), clave en
   `OPENROUTER_API_KEY`. El adaptador se llama `adapters/openrouter.py`. **No usar LiteLLM** (motivo en DECISIONS.md:
   incidentes de cadena de suministro en 2026 y una capa de abstracción innecesaria con nuestro propio puerto).
   OpenRouter es un servicio, no una dependencia: no cambia ese argumento.
-- Modelo LLM por defecto: `anthropic/claude-opus-5.5` (identificador de OpenRouter; confírmalo contra
-  `GET /api/v1/models` al implementar M3), configurable con `LLM_MODEL`. En este modelo el *thinking* no se puede
+- Modelo LLM por defecto: `anthropic/claude-opus-5.5` (identificador de OpenRouter, comprobado en
+  `GET /api/v1/models`), configurable con `LLM_MODEL`. En este modelo el *thinking* no se puede
   desactivar; la profundidad se fija explícitamente con `reasoning.effort = "medium"`. Salida estructurada con
-  `response_format` de tipo `json_schema` (`strict: true`) generado desde el modelo Pydantic, y
+  `response_format` de tipo `json_schema` (`strict: true`, esquema escrito a mano en el adaptador), y
   `provider.require_parameters = true` para que OpenRouter solo enrute a proveedores que lo soporten. Sin *prefill*
   ni `tool_choice` forzado. Privacidad: `provider.data_collection = "deny"` y solo proveedores sin retención de datos
   (los documentos son confidenciales). Comprueba siempre `finish_reason` (`length`, `content_filter`, `error`) y
@@ -135,8 +138,11 @@ instrumentado. Detalle en `docs/architecture.md`.
   `vector(1024)`. Se decide midiendo con `eval/`. Usa `input_type="document"` y `input_type="query"`. Cada fragmento
   guarda `embedding_model` y la consulta filtra por el modelo activo.
 - Reintentos: en el worker, `max_retries=0` en el SDK y backoff exponencial con jitter de Celery (visible como estado
-  `retrying`). En la API, un único reintento dentro de un presupuesto total inferior al `proxy_read_timeout` de nginx.
-  No se apilan reintentos de varias capas.
+  `retrying`). En la API, un único reintento y solo si cabe entero en el presupuesto de 55 s (`QUERY_BUDGET_S`),
+  inferior al `proxy_read_timeout` de nginx (60 s). No se apilan reintentos de varias capas.
+- Los proveedores se obtienen con `get_llm_provider()` y `get_embedding_provider()` (`adapters/factory.py`): una
+  instancia por proceso, para reutilizar las conexiones HTTP. Las pruebas que cambian la configuración limpian esa
+  caché.
 
 ## Plan de trabajo (hitos)
 
@@ -145,7 +151,7 @@ instrumentado. Detalle en `docs/architecture.md`.
 | M0 | Esqueleto: compose, migración inicial, puertos, simulados, traza HTTP → Celery → LLM probada, CI. Despliegue en https://nortelegal.mizpa.io | hecho |
 | M1 | Ingesta: validación de archivo (magic bytes, tamaño, zip bomb), almacén de blobs, versionado e idempotencia, extracción PDF/DOCX/TXT, fragmentador con offsets, tarea con lease y reintentos, reconciliador | hecho |
 | M2 | Frontend: carga, lista con estado por *polling*, errores visibles y reintento | hecho |
-| M3 | Consulta: búsqueda híbrida (HNSW + FTS + RRF), constructor de prompt, validación de citas, adaptadores OpenRouter y Voyage, degradación ante fallos, pantalla de preguntas | pendiente |
+| M3 | Consulta: búsqueda híbrida (HNSW + FTS + RRF), constructor de prompt, validación de citas, adaptadores OpenRouter y Voyage, degradación ante fallos, pantalla de preguntas | hecho |
 | M4 | Observabilidad (métricas de ingesta y recuperación), pulido de errores, mitigación de inyección con documento canario | pendiente |
 | M5 | Dataset, preguntas de evaluación, script de métricas, resultados en DECISIONS.md, README final | pendiente |
 | M6 | Verificación desde un clon limpio, CI en verde, congelación. **Dejar al menos 6 h de margen antes del plazo** | pendiente |

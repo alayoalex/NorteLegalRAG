@@ -93,6 +93,14 @@ def chunk_text(
     return chunks
 
 
+def section_at(text: str, offset: int) -> str | None:
+    """Último encabezado de `text` que empieza antes de `offset`, si lo hay."""
+    section = None
+    for match in _HEADING.finditer(text, 0, offset):
+        section = match.group().strip()[:MAX_SECTION_CHARS]
+    return section
+
+
 def _split(
     boundaries: list[list[int]], start: int, end: int, level: int, target: int
 ) -> list[tuple[int, int]]:

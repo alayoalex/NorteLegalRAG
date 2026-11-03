@@ -88,3 +88,61 @@ export function retryDocument(documentId: string): Promise<Version> {
     method: "POST",
   });
 }
+
+export type QueryStatus = "answered" | "no_context" | "degraded";
+
+export type Citation = {
+  ref: string;
+  chunk_id: string;
+  document_id: string;
+  document_name: string;
+  version_id: string;
+  version_no: number;
+  is_current: boolean;
+  section: string | null;
+  page_start: number | null;
+  page_end: number | null;
+  quote: string;
+  // Posición de la cita en el texto extraído del documento.
+  char_start: number;
+  char_end: number;
+};
+
+export type Source = {
+  chunk_id: string;
+  document_id: string;
+  document_name: string;
+  version_id: string;
+  version_no: number;
+  is_current: boolean;
+  section: string | null;
+  page_start: number | null;
+  page_end: number | null;
+  char_start: number;
+  char_end: number;
+  text: string;
+};
+
+export type QueryResult = {
+  status: QueryStatus;
+  reason: string | null;
+  retrieval_mode: "hybrid" | "lexical";
+  answer: string | null;
+  citations: Citation[];
+  sources: Source[];
+  correlation_id: string | null;
+};
+
+export function askQuestion(question: string): Promise<QueryResult> {
+  return request<QueryResult>("/api/v1/query", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+}
+
+export type ChunkDetail = Source & { ordinal: number };
+
+export function getChunk(chunkId: string): Promise<ChunkDetail> {
+  return request<ChunkDetail>(`/api/v1/chunks/${encodeURIComponent(chunkId)}`);
+}

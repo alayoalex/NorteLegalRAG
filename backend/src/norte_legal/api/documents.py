@@ -5,7 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Query, Response, UploadFile, status
 
-from norte_legal.adapters.factory import build_embedding_provider
+from norte_legal.adapters.factory import get_embedding_provider
 from norte_legal.api.dependencies import BlobStore, DbSession, TenantId
 from norte_legal.api.problems import ProblemError
 from norte_legal.api.schemas import (
@@ -54,7 +54,7 @@ def upload_document(
         file_name=file.filename,
         content=content,
         blobs=blobs,
-        embedding_model=build_embedding_provider(settings).model,
+        embedding_model=get_embedding_provider().model,
         trace_id=current_trace_id(),
     )
     version = result.version
