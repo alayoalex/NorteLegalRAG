@@ -1,11 +1,16 @@
 """Errores HTTP como `application/problem+json` (RFC 9457), con un `code` estable para la UI."""
 
+import structlog
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from norte_legal.domain.errors import InvalidDocumentError
+from norte_legal.observability.telemetry import current_trace_id
+
+logger = structlog.get_logger(__name__)
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 
@@ -31,6 +36,8 @@ def problem_response(
     body["code"] = code
     if detail:
         body["detail"] = detail
+    # Con este identificador se encuentran la traza y los logs de la petición fallida.
+    body["correlation_id"] = current_trace_id()
     return JSONResponse(body, status_code=status_code, media_type=PROBLEM_MEDIA_TYPE)
 
 
@@ -56,3 +63,18 @@ def install_problem_handlers(app: FastAPI) -> None:
     @app.exception_handler(StarletteHTTPException)
     def _http(_: Request, error: StarletteHTTPException) -> JSONResponse:
         return problem_response(error.status_code, "http_error", str(error.detail))
+
+    @app.exception_handler(OperationalError)
+    def _database(_: Request, error: OperationalError) -> JSONResponse:
+        # Solo el tipo: el mensaje de un error de SQL puede incluir datos de la consulta.
+        logger.error("database_unavailable", error_type=type(error.orig).__name__)
+        return problem_response(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "database_unavailable", "Database unavailable"
+        )
+
+    @app.exception_handler(Exception)
+    def _unhandled(_: Request, error: Exception) -> JSONResponse:
+        logger.error("unhandled_error", error_type=type(error).__name__)
+        return problem_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR, "internal_error", "Internal server error"
+        )

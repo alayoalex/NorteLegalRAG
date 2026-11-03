@@ -90,3 +90,20 @@ def test_readiness_reports_real_dependencies(app: FastAPI) -> None:
 
 def test_liveness_does_not_depend_on_infrastructure(app: FastAPI) -> None:
     assert TestClient(app).get("/healthz").json() == {"status": "ok"}
+
+
+def test_database_queries_appear_in_the_request_trace(
+    app: FastAPI, exporter: InMemorySpanExporter
+) -> None:
+    """Si la instrumentación de SQLAlchemy se desactiva (versión no soportada), esto falla."""
+    exporter.clear()
+    response = TestClient(app).get("/api/v1/documents")
+    correlation_id = response.headers["X-Correlation-ID"]
+
+    sql_spans = [
+        span
+        for span in exporter.get_finished_spans()
+        if span.attributes and span.attributes.get("db.system") == "postgresql"
+    ]
+    assert sql_spans
+    assert all(format(span.context.trace_id, "032x") == correlation_id for span in sql_spans)

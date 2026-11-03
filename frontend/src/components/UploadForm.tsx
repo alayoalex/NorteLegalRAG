@@ -3,13 +3,12 @@ import { useRef, useState } from "react";
 
 import {
   ACCEPTED_EXTENSIONS,
-  ApiError,
   DOCUMENTS_QUERY_KEY,
   MAX_UPLOAD_BYTES,
   uploadDocument,
 } from "../api";
 import type { UploadResult } from "../api";
-import { errorMessage } from "../messages";
+import { apiErrorMessage, errorMessage } from "../messages";
 
 type Outcome = { key: string; name: string; ok: boolean; message: string };
 
@@ -43,8 +42,7 @@ export function UploadForm() {
           const result = await uploadDocument(file);
           results.push({ key, name: file.name, ok: true, message: successMessage(result) });
         } catch (error) {
-          const code = error instanceof ApiError ? error.code : null;
-          results.push({ key, name: file.name, ok: false, message: errorMessage(code) });
+          results.push({ key, name: file.name, ok: false, message: apiErrorMessage(error) });
         }
         await queryClient.invalidateQueries({ queryKey: DOCUMENTS_QUERY_KEY });
       }

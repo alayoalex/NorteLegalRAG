@@ -45,6 +45,11 @@ _meter = metrics.get_meter("norte_legal.ingestion")
 _duration = _meter.create_histogram(
     "ingestion.duration", unit="s", description="Duración de un intento de ingesta, por resultado"
 )
+_chunks = _meter.create_histogram("ingestion.chunks", description="Fragmentos por versión lista")
+# Lo actualiza el reconciliador en cada pasada: la cola real está en PostgreSQL, no en Redis.
+_backlog = _meter.create_gauge(
+    "ingestion.backlog", description="Versiones pendientes, por estado (todos los tenants)"
+)
 
 MAX_ATTEMPTS = 5
 # Se renueva tras extraer y tras cada lote de embeddings: solo vence si el worker muere o se cuelga.
@@ -203,6 +208,7 @@ def _run(
 
         with session_factory() as session, session.begin():
             _complete(session, claim, chunks, embeddings, embedder.model)
+        _chunks.record(len(chunks))
         return ProcessResult("ready")
     except LeaseLostError:
         log.warning("ingest_lease_lost")
@@ -276,6 +282,14 @@ def reconcile(session: Session) -> list[uuid.UUID]:
             .values(status="queued", lease_expires_at=now + QUEUED_GRACE)
             .returning(DocumentVersion.id)
         ).all()
+        rows = session.execute(
+            select(DocumentVersion.status, func.count())
+            .where(DocumentVersion.status.in_(_PENDING))
+            .group_by(DocumentVersion.status)
+        ).all()
+        counts = {status: count for status, count in rows}
+    for status in _PENDING:
+        _backlog.set(counts.get(status, 0), {"status": status})
     if exhausted or requeued:
         logger.info("reconcile_finished", requeued=len(requeued), exhausted=len(exhausted))
     return list(requeued)

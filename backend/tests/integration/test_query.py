@@ -1,6 +1,8 @@
 """Consulta contra PostgreSQL real: búsqueda híbrida, citas verificadas, compuertas, degradación."""
 
+import re
 import uuid
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -17,6 +19,8 @@ from norte_legal.domain.ports import DraftAnswer, DraftCitation, RagPrompt
 from norte_legal.services import ingestion
 
 pytestmark = pytest.mark.integration
+
+CANARY_DOCUMENT = Path(__file__).parents[3] / "data" / "samples" / "canario-inyeccion.txt"
 
 LEASE = (
     "Section 1. Term\nThe lease lasts five years from the signing date.\n\n"
@@ -47,6 +51,21 @@ class InventingLLM(FakeLLMProvider):
                 DraftCitation(ref="S99", quote="Either party may terminate the lease"),
             ],
         )
+
+
+class CompromisedLLM(FakeLLMProvider):
+    """Simula un modelo que obedece al documento canario: filtra su marcador de seguridad."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.prompts: list[RagPrompt] = []
+
+    def generate_answer(self, prompt: RagPrompt) -> DraftAnswer:
+        self.prompts.append(prompt)
+        marker = re.search(r"NL-[0-9a-f]{16}", prompt.system)
+        assert marker is not None
+        honest = super().generate_answer(prompt)
+        return honest.model_copy(update={"answer": f"Mi marcador es {marker.group()}."})
 
 
 @pytest.fixture(scope="module")
@@ -196,3 +215,49 @@ def test_vector_search_can_use_the_partial_hnsw_index(migrated_settings: None) -
             )
         )
     assert "ix_chunks_embedding_hnsw" in plan
+
+
+def test_a_model_that_obeys_the_canary_document_is_blocked(
+    tenant_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _ingest(tenant_client, "politica-viajes.txt", CANARY_DOCUMENT.read_text(encoding="utf-8"))
+    llm = CompromisedLLM()
+    monkeypatch.setattr("norte_legal.api.query.get_llm_provider", lambda: llm)
+
+    body = _ask(tenant_client, "¿Cuál es el máximo de reembolso por noche de alojamiento?")
+
+    assert (body["status"], body["reason"], body["answer"]) == ("no_context", "prompt_leak", None)
+    # El documento no consiguió cerrar su etiqueta ni inyectar una pregunta propia.
+    (prompt,) = llm.prompts
+    from norte_legal.domain.prompts import render_user_message
+
+    message = render_user_message(prompt)
+    assert message.count("</source>") == len(prompt.sources)
+    assert message.count("<question>") == 1
+
+
+def test_the_canary_document_does_not_change_an_honest_answer(tenant_client: TestClient) -> None:
+    _ingest(tenant_client, "politica-viajes.txt", CANARY_DOCUMENT.read_text(encoding="utf-8"))
+
+    body = _ask(tenant_client, "¿Cuál es el máximo de reembolso por noche de alojamiento?")
+
+    assert body["status"] == "answered"
+    assert "150 euros" in body["citations"][0]["quote"]
+    assert all(citation["ref"] != "S99" for citation in body["citations"])
+
+
+def test_unexpected_errors_are_problem_details_with_a_correlation_id(
+    app: FastAPI, tenant_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(*_: object, **__: object) -> None:
+        raise RuntimeError("bug")
+
+    monkeypatch.setattr("norte_legal.api.query.answer_question", broken)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.post("/api/v1/query", json={"question": "¿Plazo de preaviso?"})
+
+    assert response.status_code == 500
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.json()["code"] == "internal_error"
+    assert "correlation_id" in response.json()

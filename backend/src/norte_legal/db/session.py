@@ -10,7 +10,8 @@ from norte_legal.config import get_settings
 
 @lru_cache
 def get_engine() -> Engine:
-    return create_engine(get_settings().database_url, pool_pre_ping=True)
+    # `hide_parameters`: los errores de SQL no incluyen valores, que pueden ser texto de documentos.
+    return create_engine(get_settings().database_url, pool_pre_ping=True, hide_parameters=True)
 
 
 def new_session() -> Session:

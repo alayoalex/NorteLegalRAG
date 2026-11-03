@@ -43,6 +43,8 @@ export class ApiError extends Error {
   constructor(
     readonly code: string,
     readonly status: number,
+    // Identificador de la traza y los logs de la petición: es lo que se pide a soporte.
+    readonly correlationId: string | null = null,
   ) {
     super(code);
   }
@@ -56,20 +58,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError("network_error", 0);
   }
   if (!response.ok) {
-    throw new ApiError(await problemCode(response), response.status);
+    const correlationId = response.headers.get("X-Correlation-ID");
+    const problem = await readProblem(response);
+    throw new ApiError(problem.code, response.status, problem.correlationId ?? correlationId);
   }
   return (await response.json()) as T;
 }
 
-async function problemCode(response: Response): Promise<string> {
+async function readProblem(
+  response: Response,
+): Promise<{ code: string; correlationId: string | null }> {
   try {
-    const body = (await response.json()) as { code?: unknown };
-    if (typeof body.code === "string") return body.code;
+    const body = (await response.json()) as { code?: unknown; correlation_id?: unknown };
+    if (typeof body.code === "string") {
+      const correlationId = typeof body.correlation_id === "string" ? body.correlation_id : null;
+      return { code: body.code, correlationId };
+    }
   } catch {
     // Respuesta sin cuerpo JSON, por ejemplo un 413 o un 502 de nginx.
   }
-  if (response.status === 413) return "file_too_large";
-  return response.status >= 500 ? "server_error" : "http_error";
+  if (response.status === 413) return { code: "file_too_large", correlationId: null };
+  return { code: response.status >= 500 ? "server_error" : "http_error", correlationId: null };
 }
 
 export async function listDocuments(): Promise<DocumentSummary[]> {

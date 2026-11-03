@@ -29,7 +29,7 @@ from norte_legal.domain.ports import (
     PromptSource,
     RagPrompt,
 )
-from norte_legal.domain.prompts import build_prompt
+from norte_legal.domain.prompts import build_prompt, leaks_canary, new_canary
 from norte_legal.domain.retrieval import (
     LEXICAL_CANDIDATES,
     VECTOR_CANDIDATES,
@@ -44,6 +44,16 @@ _retrieval_duration = _meter.create_histogram(
     "retrieval.duration", unit="s", description="Duración de la recuperación, por modo"
 )
 _answers = _meter.create_counter("rag.answers", description="Respuestas, por estado y motivo")
+_top_similarity = _meter.create_histogram(
+    "retrieval.top_similarity",
+    description="Similitud coseno del mejor candidato vectorial. Sirve para calibrar el umbral",
+)
+_citations_dropped = _meter.create_counter(
+    "rag.citations.dropped", description="Citas del LLM descartadas por no verificarse"
+)
+_prompt_leaks = _meter.create_counter(
+    "rag.prompt_leaks", description="Respuestas descartadas porque contenían el canario"
+)
 
 # Presupuesto de toda la consulta: por debajo del `proxy_read_timeout` de nginx (60 s).
 QUERY_BUDGET_S = 55.0
@@ -55,6 +65,7 @@ Reason = Literal[
     "unverified_citations",
     "llm_unavailable",
     "llm_error",
+    "prompt_leak",
 ]
 RetrievalMode = Literal["hybrid", "lexical"]
 
@@ -97,9 +108,11 @@ def answer_question(
         return _finish(QueryResult("no_context", mode, "no_sources"))
 
     refs = {f"S{index}": source for index, source in enumerate(sources, start=1)}
+    canary = new_canary()
     prompt = build_prompt(
         question,
         [PromptSource(ref=ref, text=src.text, label=_label(src)) for ref, src in refs.items()],
+        canary,
     )
     try:
         draft = _generate_within_budget(llm, prompt, started, llm_timeout_s, clock)
@@ -108,6 +121,11 @@ def answer_question(
         logger.warning("llm_degraded", error_code=error.code)
         return _finish(QueryResult("degraded", mode, reason, sources=sources))
 
+    if leaks_canary(canary, draft.answer, *(citation.quote for citation in draft.citations)):
+        _prompt_leaks.add(1)
+        logger.warning("prompt_canary_leaked", source_count=len(sources))
+        return _finish(QueryResult("no_context", mode, "prompt_leak", sources=sources))
+
     if draft.insufficient_context:
         return _finish(
             QueryResult("no_context", mode, "model_insufficient_context", sources=sources)
@@ -115,6 +133,7 @@ def answer_question(
 
     validated = validate_answer(draft, {ref: source.text for ref, source in refs.items()})
     if validated.dropped:
+        _citations_dropped.add(validated.dropped)
         logger.warning("citations_dropped", dropped=validated.dropped)
     if not validated.citations or not validated.answer:
         return _finish(QueryResult("no_context", mode, "unverified_citations", sources=sources))
@@ -168,6 +187,9 @@ def _retrieve(
             loaded = repository.load([candidate.chunk_id for candidate in ranked])
         sources = [loaded[c.chunk_id] for c in ranked if c.chunk_id in loaded]
 
+        if vector:
+            _top_similarity.record(vector[0][1], {"embedding_model": embedder.model})
+            span.set_attribute("retrieval.top_similarity", vector[0][1])
         span.set_attribute("retrieval.mode", mode)
         span.set_attribute("retrieval.vector_candidates", len(vector))
         span.set_attribute("retrieval.lexical_candidates", len(lexical))

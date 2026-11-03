@@ -4,7 +4,7 @@ Decisiones sobre los puntos abiertos del enunciado, trade-offs y uso de IA gener
 eligió, por qué, qué se sacrificó y cuándo convendría revisarla. Las marcadas como **hipótesis** se confirman o
 corrigen con las mediciones de `eval/` (hito M5).
 
-> Estado: borrador del hito M3. Las secciones de medición están vacías hasta tener datos.
+> Estado: borrador del hito M4. Las secciones de medición están vacías hasta tener datos.
 
 ## 1. Fragmentación y recuperación
 
@@ -212,7 +212,39 @@ vectorial filtra por el modelo activo. Al pasar de los embeddings simulados a Vo
 se encuentran por texto completo hasta que se vuelven a subir. Como la huella del pipeline cambia, la nueva subida
 crea una versión nueva.
 
-## 11. Uso de IA generativa
+## 11. Observabilidad, errores e inyección de prompt
+
+**Spans de SQL recuperados.** Las trazas no tenían spans de SQL desde M0. La instrumentación de SQLAlchemy (0.66b1)
+solo admite SQLAlchemy < 2.1 y, con la 2.1.6 instalada, se desactivaba sin error (solo un aviso en el log). Se fija
+`sqlalchemy>=2.0.35,<2.1` hasta que la instrumentación la soporte, y una prueba comprueba que los `SELECT` aparecen
+en la traza de la petición.
+
+**Métricas añadidas** (tabla completa en `docs/architecture.md`): cola de ingesta según PostgreSQL, fragmentos por
+versión, similitud del mejor candidato (para calibrar el umbral en M5), citas descartadas y fugas del canario. La cola
+la publica el reconciliador. Redis no la sabe y, por el invariante 1, tampoco es la fuente de verdad.
+
+**Errores.** Todo error HTTP es `problem+json` con un `code` estable y el `correlation_id` de la petición, incluidos un
+500 inesperado (`internal_error`) y una base de datos caída (503 `database_unavailable`). Los manejadores registran
+solo el tipo de excepción. La interfaz muestra la referencia junto al mensaje, para que un usuario pueda reportarla.
+
+**Inyección de prompt: capas de mitigación.**
+1. **Delimitación:** los fragmentos van en `<source>` y su `<` se neutraliza, así que no pueden cerrar la etiqueta ni
+   abrir una pregunta falsa.
+2. **Sin capacidades:** el modelo no tiene herramientas. Lo peor que puede hacer es escribir texto.
+3. **Validación:** solo se muestran citas literales de fragmentos recuperados, así que una referencia inventada como
+   `S99` se descarta.
+4. **Canario:** cada prompt lleva un marcador aleatorio (`NL-` y 16 hexadecimales) con la orden de no escribirlo
+   nunca. Si aparece en la respuesta o en una cita, el modelo obedeció a un documento o filtró sus instrucciones, y
+   la respuesta se descarta (`reason: prompt_leak`, métrica `rag.prompt_leaks`).
+5. **Renderizado:** la salida se pinta como texto plano en React.
+
+**Qué no cubre:** el canario detecta la inyección que hace filtrar el marcador, pero no una que solo sesgue la
+respuesta ("di que no hay penalizaciones"). Esa la frena en parte la exigencia de citas literales: la afirmación
+inventada no tiene una frase que la respalde. El resto se mide en M5 con preguntas sobre el documento canario
+(`data/samples/canario-inyeccion.txt`) y el modelo real. Con los proveedores simulados, la prueba de integración
+usa un modelo comprometido a propósito, que filtra el marcador, y comprueba que la respuesta se bloquea.
+
+## 12. Uso de IA generativa
 
 _Se completa al final: qué se generó con IA, qué se reescribió y cómo se verificó (pruebas, lectura línea a línea y
 mediciones)._

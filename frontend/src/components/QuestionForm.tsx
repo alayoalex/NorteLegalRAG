@@ -1,9 +1,9 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { ApiError, askQuestion, getChunk } from "../api";
+import { askQuestion, getChunk } from "../api";
 import type { Citation, QueryResult, Source } from "../api";
-import { errorMessage, noContextMessage, pagesLabel } from "../messages";
+import { apiErrorMessage, noContextMessage, pagesLabel } from "../messages";
 
 // Todo el texto que viene del modelo o de los documentos se pinta como texto de React,
 // nunca como HTML (invariante 7).
@@ -48,7 +48,7 @@ export function QuestionForm() {
       )}
       {ask.isError && (
         <p role="alert" className="alert">
-          {errorMessage(ask.error instanceof ApiError ? ask.error.code : null)}
+          {apiErrorMessage(ask.error)}
         </p>
       )}
       {ask.data && <Result result={ask.data} />}
@@ -136,7 +136,7 @@ function CitationItem({ citation }: { citation: Citation }) {
       {expanded && chunk.isPending && <p className="muted">Cargando…</p>}
       {expanded && chunk.isError && (
         <p className="error-text">
-          {errorMessage(chunk.error instanceof ApiError ? chunk.error.code : null)}
+          {apiErrorMessage(chunk.error)}
         </p>
       )}
       {expanded && chunk.data && (

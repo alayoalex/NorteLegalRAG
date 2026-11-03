@@ -178,7 +178,9 @@ sequenceDiagram
 ## Trazabilidad
 
 Una petición produce **una sola traza**: `HTTP POST` → `apply_async/ingest` → `run/ingest` → `embeddings.*` y
-`SQL`. En la consulta: `HTTP POST` → `retrieval.*` → `llm.generate_answer`. Celery transporta el contexto W3C en las
+`SQL`. En la consulta: `HTTP POST` → `embeddings.embed_query` → `retrieval.hybrid` (con sus `SELECT`) →
+`llm.generate_answer`. Una prueba de integración falla si las consultas SQL dejan de aparecer en la traza: la
+instrumentación de SQLAlchemy se desactiva sin error cuando la versión instalada no está soportada. Celery transporta el contexto W3C en las
 cabeceras del mensaje. El `trace_id` es también el `correlation_id` de los logs, se devuelve en la cabecera
 `X-Correlation-ID` y se guarda en `document_versions.trace_id`. Con ese único identificador se encuentran los logs y
 la traza de cualquier documento.
@@ -188,7 +190,26 @@ Métricas (OTLP → colector → Prometheus en `:8889`):
 | Métrica | Tipo | Para qué |
 |---|---|---|
 | `ingestion.duration` | histograma, por `status` | capacidad del worker, regresiones del pipeline |
-| `retrieval.duration` | histograma, por `mode` | latencia de búsqueda, efecto de `ef_search` |
-| `llm.request.duration` | histograma, por modelo | latencia del proveedor |
+| `ingestion.chunks` | histograma | tamaño de los documentos procesados, coste de embeddings |
+| `ingestion.backlog` | gauge, por `status` | versiones pendientes según PostgreSQL (la cola real), cada 60 s |
+| `embeddings.request.duration` / `.errors` | histograma / contador | salud del proveedor de embeddings |
+| `retrieval.duration` | histograma, por `mode` | latencia de búsqueda, efecto de `ef_search`, tasa de modo léxico |
+| `retrieval.top_similarity` | histograma, por modelo | distribución de similitudes para calibrar `RETRIEVAL_MIN_SIMILARITY` |
+| `llm.request.duration` | histograma, por modelo | latencia del proveedor, margen frente al presupuesto de 55 s |
 | `llm.request.errors` | contador, por `error.type` | salud del proveedor, tasa de 429 |
-| `rag.answers` | contador, por `status` | tasa de abstención y degradación |
+| `rag.answers` | contador, por `status` y `reason` | tasa de abstención y degradación |
+| `rag.citations.dropped` | contador | citas del LLM que no se verificaron: señal de alucinación |
+| `rag.prompt_leaks` | contador | respuestas descartadas por contener el canario: inyección con éxito |
+
+Consultas de ejemplo en Prometheus (`:8889`):
+
+```promql
+histogram_quantile(0.95, sum by (le) (rate(llm_request_duration_seconds_bucket[5m])))   # p95 del LLM
+sum by (status, reason) (rate(rag_answers_total[1h]))                                   # mezcla de respuestas
+ingestion_backlog{status="queued"}                                                      # cola pendiente
+increase(rag_prompt_leaks_total[1d]) > 0                                                # alerta de inyección
+```
+
+Ningún log ni atributo de traza contiene texto de documentos, preguntas o respuestas: solo identificadores,
+tamaños, duraciones y códigos. El motor de SQLAlchemy usa `hide_parameters=True`, así que un error de SQL tampoco
+vuelca valores.

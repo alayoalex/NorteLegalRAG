@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { ApiError, DOCUMENTS_QUERY_KEY, listDocuments, retryDocument } from "../api";
+import { DOCUMENTS_QUERY_KEY, listDocuments, retryDocument } from "../api";
 import type { DocumentSummary, VersionStatus } from "../api";
-import { STATUS_LABELS, errorMessage } from "../messages";
+import { STATUS_LABELS, apiErrorMessage, errorMessage } from "../messages";
 
 // Mientras algo se procesa se consulta a menudo; si todo terminó, solo de vez en cuando.
 const ACTIVE_POLL_MS = 2_000;
@@ -33,7 +33,7 @@ export function DocumentList() {
       <h2 id="documents-title">Documentos</h2>
       {documents.isError && (
         <p role="alert" className="alert">
-          {errorMessage(documents.error instanceof ApiError ? documents.error.code : null)}{" "}
+          {apiErrorMessage(documents.error)}{" "}
           Se reintentará automáticamente.
         </p>
       )}
@@ -103,7 +103,7 @@ function DocumentRow({ document }: { document: DocumentSummary }) {
         )}
         {retry.isError && (
           <div role="alert" className="error-text">
-            {errorMessage(retry.error instanceof ApiError ? retry.error.code : null)}
+            {apiErrorMessage(retry.error)}
           </div>
         )}
       </td>

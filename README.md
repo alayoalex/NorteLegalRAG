@@ -3,8 +3,9 @@
 Asistente de conocimiento para contratos y políticas: ingesta asíncrona de documentos y respuestas con citas
 verificables. Construido con FastAPI, Celery con Redis, PostgreSQL con pgvector, React y OpenTelemetry.
 
-> **Estado:** hito M3. Se suben documentos, un worker los procesa en segundo plano y se hacen preguntas con
-> respuestas citadas y verificadas. Quedan la observabilidad ampliada, la evaluación y el cierre (ver `CLAUDE.md`).
+> **Estado:** hito M4. Se suben documentos, un worker los procesa en segundo plano y se hacen preguntas con
+> respuestas citadas y verificadas, con métricas, trazas completas y defensa frente a inyección de prompt. Quedan la
+> evaluación y el cierre (ver `CLAUDE.md`).
 
 ## Ejecutar desde cero (sin claves)
 

@@ -1,4 +1,5 @@
 // Textos de la UI para los estados y los `code` estables de la API.
+import { ApiError } from "./api";
 import type { VersionStatus } from "./api";
 
 export const STATUS_LABELS: Record<VersionStatus, string> = {
@@ -13,6 +14,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   // Subida
   network_error: "No se pudo contactar con el servidor. Comprueba la conexión.",
   server_error: "El servidor no está disponible. Inténtalo de nuevo en unos minutos.",
+  internal_error: "Se produjo un error interno. Inténtalo de nuevo; si se repite, avisa a soporte.",
+  database_unavailable: "La base de datos no responde. Inténtalo de nuevo en unos minutos.",
+  invalid_tenant: "El espacio de trabajo indicado no es válido.",
   file_too_large: "El archivo supera el tamaño máximo de 25 MB.",
   empty_file: "El archivo está vacío.",
   invalid_file_name: "El nombre del archivo no es válido.",
@@ -45,6 +49,8 @@ const NO_CONTEXT_MESSAGES: Record<string, string> = {
     "Los fragmentos encontrados no bastan para responder con seguridad. Revisa los fragmentos consultados.",
   unverified_citations:
     "No se muestra una respuesta porque no se pudo verificar ninguna cita contra los documentos.",
+  prompt_leak:
+    "Se descartó la respuesta por seguridad: uno de los documentos consultados parece contener instrucciones dirigidas al asistente.",
 };
 
 export function noContextMessage(reason: string | null): string {
@@ -58,4 +64,11 @@ export function pagesLabel(start: number | null, end: number | null): string | n
 
 export function errorMessage(code: string | null | undefined): string {
   return (code && ERROR_MESSAGES[code]) ?? "Se produjo un error inesperado.";
+}
+
+/** Mensaje para un error de la API, con la referencia de soporte si la hay. */
+export function apiErrorMessage(error: unknown): string {
+  if (!(error instanceof ApiError)) return errorMessage(null);
+  const message = errorMessage(error.code);
+  return error.correlationId ? `${message} Referencia: ${error.correlationId}` : message;
 }

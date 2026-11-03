@@ -37,7 +37,8 @@ frontend/                    React + Vite + TypeScript + TanStack Query, servido
 infra/otel/                  Configuración del colector de OpenTelemetry
 docs/architecture.md         Diagramas y flujos (versionado)
 docs/dataset.md              Dataset de evaluación y licencias
-data/samples/                Documentos de ejemplo versionados (pequeños, con licencia compatible)
+data/samples/                Documentos de ejemplo versionados (pequeños, con licencia compatible). Incluye el canario
+                             de inyección (`canario-inyeccion.txt`); atribución en ATTRIBUTION.md
 eval/                        Preguntas de evaluación, script y resultados
 scripts/deploy.sh            Despliegue en el servidor detrás del Caddy compartido (ver README)
 ```
@@ -108,6 +109,8 @@ instrumentado. Detalle en `docs/architecture.md`.
 - **Migraciones:** nunca edites una migración ya aplicada; crea otra. Mantén `db/models.py` sincronizado. La prueba
   `test_migrations_match_the_orm_and_are_reversible` detecta la deriva. Las operaciones de pgvector se escriben con
   `op.execute`.
+- `sqlalchemy<2.1` es deliberado: la instrumentación de OpenTelemetry aún no soporta 2.1 y se desactiva en silencio
+  (DECISIONS.md §11). No lo subas sin comprobar que `test_database_queries_appear_in_the_request_trace` sigue en verde.
 - Las dependencias se fijan en `uv.lock` y `package-lock.json`. `exclude-newer` en `pyproject.toml` es una cuarentena
   deliberada contra ataques de cadena de suministro: no la quites para instalar algo recién publicado.
 - Pruebas: las unitarias no usan red ni Docker. Las de integración usan contenedores reales (`@pytest.mark.integration`),
@@ -152,7 +155,7 @@ instrumentado. Detalle en `docs/architecture.md`.
 | M1 | Ingesta: validación de archivo (magic bytes, tamaño, zip bomb), almacén de blobs, versionado e idempotencia, extracción PDF/DOCX/TXT, fragmentador con offsets, tarea con lease y reintentos, reconciliador | hecho |
 | M2 | Frontend: carga, lista con estado por *polling*, errores visibles y reintento | hecho |
 | M3 | Consulta: búsqueda híbrida (HNSW + FTS + RRF), constructor de prompt, validación de citas, adaptadores OpenRouter y Voyage, degradación ante fallos, pantalla de preguntas | hecho |
-| M4 | Observabilidad (métricas de ingesta y recuperación), pulido de errores, mitigación de inyección con documento canario | pendiente |
+| M4 | Observabilidad (métricas de ingesta y recuperación), pulido de errores, mitigación de inyección con documento canario | hecho |
 | M5 | Dataset, preguntas de evaluación, script de métricas, resultados en DECISIONS.md, README final | pendiente |
 | M6 | Verificación desde un clon limpio, CI en verde, congelación. **Dejar al menos 6 h de margen antes del plazo** | pendiente |
 
