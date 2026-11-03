@@ -12,8 +12,7 @@ fragmento y posición.
 - **Entrega única:** se evalúa el último commit en el momento de pegar el enlace. **Fecha límite: 2026-11-05 23:20 UTC.**
 - En la entrevista el autor recorre el código y defiende cada decisión. **No añadas nada que no se pueda explicar.**
   Si una línea no se puede justificar, sobra.
-- Las decisiones ambiguas se documentan en `DECISIONS.md`, que es un entregable. `tradeoffs.md` es la versión extendida
-  y privada, con la fundamentación teórica. **Nunca se versiona** (está en `.gitignore`). No lo añadas con `git add -f`.
+- Las decisiones ambiguas se documentan en `DECISIONS.md`, que es un entregable.
 
 ## Mapa del repositorio
 
