@@ -4,7 +4,7 @@ Decisiones sobre los puntos abiertos del enunciado, trade-offs y uso de IA gener
 eligió, por qué, qué se sacrificó y cuándo convendría revisarla. Las marcadas como **hipótesis** se confirman o
 corrigen con las mediciones de `eval/` (hito M5).
 
-> Estado: borrador del hito M0. Las secciones de medición están vacías hasta tener datos.
+> Estado: borrador del hito M1. Las secciones de medición están vacías hasta tener datos.
 
 ## 1. Fragmentación y recuperación
 
@@ -109,7 +109,46 @@ de no apilar capas: `max_retries=0` en el SDK, backoff de Celery en el worker y 
 **Cuándo revisarla:** si un cliente exige contrato de tratamiento de datos directo con el proveedor del modelo, se
 añade un adaptador directo detrás del mismo puerto sin tocar el dominio.
 
-## 9. Uso de IA generativa
+## 9. Ingesta
+
+**Validación en la API, antes de encolar.** El tipo sale de los magic bytes, no de la extensión ni del
+`Content-Type`. Un DOCX es un ZIP y se inspecciona su directorio central sin descomprimir. Se rechaza si tiene más de
+2 000 entradas, más de 200 MiB descomprimidos, entradas cifradas o una ratio superior a 100:1 en entradas de más de
+1 MiB. El límite de subida es de 25 MiB, por debajo de los 26 MiB de nginx, para que el error lo dé la API con un
+`code` estable. El worker repite la inspección del ZIP antes de abrirlo. El parser XML de `python-docx` no resuelve
+entidades.
+
+**Qué falla de forma permanente.** Un archivo corrupto, cifrado, sin texto extraíble o con más de 1 000 páginas o
+3 millones de caracteres pasa directamente a `failed` con su `error_code`. **El OCR queda fuera del alcance**: un PDF
+escaneado termina en `no_text_extracted`, de forma visible, en lugar de producir fragmentos vacíos.
+
+**Reintentos con presupuesto en PostgreSQL.** Un error transitorio del proveedor pasa a `retrying` y Celery
+reintenta con backoff exponencial y *equal jitter* (5 s, 10 s, 20 s… con tope de 300 s y respetando `Retry-After`).
+El contador no es el de Celery, sino `attempt` frente a `attempt_limit` (5). Así sobrevive a una cola perdida y corta
+el bucle de un documento que tumba al worker. `attempt` es también el token de exclusión y nunca retrocede: el
+reintento manual sube `attempt_limit` en lugar de reiniciar el contador (migración `0002`).
+
+**Reconciliador en lugar de outbox.** Publicar en Redis después del `COMMIT` puede fallar. En lugar de una tabla
+outbox, cada estado no terminal tiene un plazo (`lease_expires_at`) y una tarea periódica vuelve a encolar lo que
+venció. El mismo mecanismo cubre la publicación fallida, el worker muerto y el mensaje de reintento perdido. Si
+Redis no responde, la subida devuelve igualmente 202 con `enqueued: false`. **Coste:** hasta 10 minutos de retraso
+en esos casos y alguna entrega duplicada, que el `UPDATE` condicional del claim descarta.
+
+**Beat embebido en el worker** (`celery worker --beat`). Evita un servicio más, pero solo es correcto con un único
+proceso worker. Con varios, beat pasaría a ser un servicio propio. El reconciliador usa `FOR UPDATE SKIP LOCKED`, así
+que dos ejecuciones simultáneas no toman la misma fila.
+
+**Versiones que terminan fuera de orden.** Si la versión 1 termina después que la 2, queda `ready` pero no pasa a ser
+la vigente. El cambio de vigente exige un `version_no` mayor que el actual y se comprueba con el documento bloqueado.
+
+**Blobs huérfanos.** Los bytes se guardan antes de la transacción, con su hash como clave. Si la transacción falla,
+queda un archivo sin fila que no hace daño y que un proceso de limpieza podría borrar. Nunca queda una fila que
+apunte a bytes que no existen.
+
+**Extracción en `domain/`.** `pypdf` y `python-docx` son parsers puros, sin red ni E/S propia. No son SDK de servicios
+externos, así que no necesitan un puerto. Se eligió `pypdf` (BSD) frente a PyMuPDF (AGPL).
+
+## 10. Uso de IA generativa
 
 _Se completa al final: qué se generó con IA, qué se reescribió y cómo se verificó (pruebas, lectura línea a línea y
 mediciones)._

@@ -3,8 +3,8 @@
 Asistente de conocimiento para contratos y políticas: ingesta asíncrona de documentos y respuestas con citas
 verificables. Construido con FastAPI, Celery con Redis, PostgreSQL con pgvector, React y OpenTelemetry.
 
-> **Estado:** hito M0 (esqueleto). El stack arranca, la migración crea el esquema y la traza
-> HTTP → Celery → LLM está probada. La ingesta y la consulta están en desarrollo (ver `CLAUDE.md`).
+> **Estado:** hito M1 (ingesta). Los documentos se suben, se validan y se versionan, y un worker los fragmenta y
+> calcula sus embeddings. La interfaz y la consulta están en desarrollo (ver `CLAUDE.md`).
 
 ## Ejecutar desde cero (sin claves)
 
@@ -20,6 +20,13 @@ docker compose up --build
 | API (OpenAPI) | http://localhost:8000/docs |
 | Trazas (Jaeger) | http://localhost:16686 |
 | Métricas (Prometheus) | http://localhost:8889/metrics |
+
+Subir un documento (PDF, DOCX o TXT, hasta 25 MiB) y seguir su estado:
+
+```bash
+curl -F "file=@contrato.pdf" http://localhost:8000/api/v1/documents   # 202, status: queued
+curl http://localhost:8000/api/v1/documents                            # latest_version.status: ready
+```
 
 Prueba de la traza de extremo a extremo: `curl -X POST http://localhost:8000/api/v1/system/ping`. Busca el
 `correlation_id` de la respuesta en Jaeger.

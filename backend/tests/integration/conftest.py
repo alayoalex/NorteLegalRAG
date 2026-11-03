@@ -38,9 +38,15 @@ def alembic_config(database_url: str) -> Config:
 
 
 @pytest.fixture(scope="session")
-def migrated_settings(database_url: str, redis_url: str, alembic_config: Config) -> Iterator[None]:
+def migrated_settings(
+    database_url: str,
+    redis_url: str,
+    alembic_config: Config,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[None]:
     """Apunta la aplicación a los contenedores, con el esquema migrado."""
     monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv("BLOB_DIR", str(tmp_path_factory.mktemp("blobs")))
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("REDIS_URL", redis_url)
     monkeypatch.setenv("OTEL_ENABLED", "false")

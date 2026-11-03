@@ -1,7 +1,7 @@
-"""Rutas de sistema. Las de documentos y consultas llegan en los hitos M1 y M3."""
+"""Rutas de sistema."""
 
 import structlog
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Response, status
 from kombu.exceptions import OperationalError
 from pydantic import BaseModel
 from redis import Redis
@@ -9,6 +9,7 @@ from redis.exceptions import RedisError
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+from norte_legal.api.problems import ProblemError
 from norte_legal.config import get_settings
 from norte_legal.db.session import new_session
 from norte_legal.observability.telemetry import current_trace_id
@@ -59,7 +60,9 @@ def system_ping() -> PingOut:
         task = ping.delay()
     except OperationalError as error:
         logger.warning("broker_unavailable", error=str(error))
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Broker unavailable") from error
+        raise ProblemError(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "broker_unavailable", "Broker unavailable"
+        ) from error
     return PingOut(task_id=task.id, correlation_id=current_trace_id())
 
 

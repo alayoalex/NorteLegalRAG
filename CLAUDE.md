@@ -21,12 +21,15 @@ backend/                     Python 3.12, uv. Una imagen para api, worker y migr
   src/norte_legal/
     api/                     FastAPI: rutas, esquemas Pydantic, dependencias
     worker/                  Aplicación Celery y tareas
-    domain/                  Puertos (interfaces), errores, lógica pura (fragmentación, prompts, validación)
+    services/                Casos de uso: registro de subidas, procesamiento de una versión, reconciliador
+    domain/                  Puertos (interfaces), errores, lógica pura (validación de archivos, extracción,
+                             fragmentación, prompts)
     adapters/                Implementaciones de los puertos: fake, openrouter, voyage, traced (decorador OTel)
     db/                      Modelos SQLAlchemy y sesión
     observability/           OpenTelemetry y logging estructurado
   migrations/                Alembic. Migraciones versionadas
   tests/unit, tests/integration
+  tests/factories.py         PDF, DOCX y ZIP generados en memoria para las pruebas
 frontend/                    React + Vite + TypeScript + TanStack Query, servido por nginx
 infra/otel/                  Configuración del colector de OpenTelemetry
 docs/architecture.md         Diagramas y flujos (versionado)
@@ -82,7 +85,8 @@ instrumentado. Detalle en `docs/architecture.md`.
 7. **El contenido de los documentos es dato, nunca instrucción.** Va delimitado en el prompt, el LLM no tiene
    herramientas y la salida se renderiza como texto plano en React (sin `dangerouslySetInnerHTML`).
 8. **Toda consulta filtra por `tenant_id`** en el repositorio, sin excepciones. El tenant sale de una única dependencia
-   de FastAPI.
+   de FastAPI. Única excepción, documentada: el reconciliador es un proceso de sistema que recorre el estado de
+   ingesta de todos los tenants. El worker filtra por el `tenant_id` de la versión que tomó.
 9. **Ningún secreto en el repositorio.** Toda la configuración llega por entorno (`config.py`). Sin claves, el sistema
    arranca con proveedores simulados.
 10. **Los adaptadores traducen las excepciones del SDK** a la taxonomía de `domain/errors.py`. Esa taxonomía decide si
@@ -137,7 +141,7 @@ instrumentado. Detalle en `docs/architecture.md`.
 | Hito | Contenido | Estado |
 |---|---|---|
 | M0 | Esqueleto: compose, migración inicial, puertos, simulados, traza HTTP → Celery → LLM probada, CI. Despliegue en https://nortelegal.mizpa.io | hecho |
-| M1 | Ingesta: validación de archivo (magic bytes, tamaño, zip bomb), almacén de blobs, versionado e idempotencia, extracción PDF/DOCX/TXT, fragmentador con offsets, tarea con lease y reintentos, reconciliador | pendiente |
+| M1 | Ingesta: validación de archivo (magic bytes, tamaño, zip bomb), almacén de blobs, versionado e idempotencia, extracción PDF/DOCX/TXT, fragmentador con offsets, tarea con lease y reintentos, reconciliador | hecho |
 | M2 | Frontend: carga, lista con estado por *polling*, errores visibles y reintento | pendiente |
 | M3 | Consulta: búsqueda híbrida (HNSW + FTS + RRF), constructor de prompt, validación de citas, adaptadores OpenRouter y Voyage, degradación ante fallos, pantalla de preguntas | pendiente |
 | M4 | Observabilidad (métricas de ingesta y recuperación), pulido de errores, mitigación de inyección con documento canario | pendiente |

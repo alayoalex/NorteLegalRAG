@@ -14,6 +14,7 @@ from norte_legal.observability.telemetry import configure_telemetry, flush_telem
 
 SERVICE_NAME = "norte-legal-worker"
 TASK_TIME_LIMIT_S = 900
+RECONCILE_INTERVAL_S = 60
 # Debe superar el límite de tiempo: si no, Redis reentrega tareas que siguen en ejecución.
 VISIBILITY_TIMEOUT_S = 3_600
 
@@ -40,6 +41,13 @@ celery_app.conf.update(
     accept_content=["json"],
     task_default_queue="ingestion",
     worker_hijack_root_logger=False,
+    # Celery sustituye sys.stdout en los procesos hijo por un proxy hacia su logger: el handler
+    # de structlog escribiría en ese proxy y los logs de las tareas se perderían.
+    worker_redirect_stdouts=False,
+    # Lo ejecuta el beat embebido en el worker (`--beat`). Con varios workers, beat iría aparte.
+    beat_schedule={
+        "reconcile-ingestion": {"task": "ingestion.reconcile", "schedule": RECONCILE_INTERVAL_S}
+    },
 )
 
 

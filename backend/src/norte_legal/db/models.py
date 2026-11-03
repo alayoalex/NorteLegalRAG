@@ -89,6 +89,9 @@ class DocumentVersion(Base):
     status: Mapped[str] = mapped_column(Text, server_default="queued")
     # Token de exclusión: un worker con un intento antiguo no puede escribir resultados.
     attempt: Mapped[int] = mapped_column(Integer, server_default="0")
+    # Tope de `attempt`. El reintento manual lo sube: `attempt` es el token y nunca retrocede.
+    attempt_limit: Mapped[int] = mapped_column(Integer, server_default="5")
+    # Plazo del estado actual. Vencido en un estado no terminal, el reconciliador reencola.
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_code: Mapped[str | None] = mapped_column(Text)
     error_message: Mapped[str | None] = mapped_column(Text)

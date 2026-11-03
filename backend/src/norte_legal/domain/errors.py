@@ -5,6 +5,21 @@ documento pasa directamente a `failed`. Ningún adaptador deja escapar excepcion
 """
 
 
+class InvalidDocumentError(Exception):
+    """El archivo no se puede procesar: reintentar no ayuda.
+
+    `code` es estable y lo entiende el frontend. `message` es técnico y nunca incluye contenido
+    del documento.
+    """
+
+    retryable = False
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
 class ProviderError(Exception):
     """Fallo al hablar con un proveedor externo de LLM o embeddings."""
 

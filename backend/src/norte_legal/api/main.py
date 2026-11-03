@@ -7,6 +7,8 @@ from opentelemetry.instrumentation.celery import CeleryInstrumentor
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
+from norte_legal.api import documents
+from norte_legal.api.problems import install_problem_handlers
 from norte_legal.api.routes import router
 from norte_legal.config import get_settings
 from norte_legal.db.session import get_engine
@@ -33,7 +35,9 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="NorteLegal RAG API", version="0.1.0")
     app.middleware("http")(_correlation_header)
+    install_problem_handlers(app)
     app.include_router(router)
+    app.include_router(documents.router)
 
     FastAPIInstrumentor.instrument_app(app, excluded_urls="healthz,readyz")
     # La API también publica: sin esto no se inyecta la traza en las cabeceras de la tarea.

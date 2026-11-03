@@ -35,7 +35,7 @@ flowchart TB
         tasks[worker/ tareas Celery]
     end
     subgraph nucleo [Núcleo]
-        services[servicios de aplicación<br/>ingesta · consulta]
+        services[services/<br/>ingesta · consulta]
         domain[domain/<br/>fragmentación · prompts · validación de citas<br/>puertos · errores]
     end
     subgraph salida [Adaptadores de salida]
@@ -106,11 +106,16 @@ stateDiagram-v2
     processing --> ready: fragmentos + swap de vigente en 1 transacción
     processing --> retrying: error transitorio (timeout, 429, 5xx)
     retrying --> processing: backoff exponencial con jitter
-    processing --> failed: error permanente (corrupto, vacío) o reintentos agotados
-    retrying --> failed: reintentos agotados
-    failed --> queued: POST /documents/{id}/retry
+    processing --> failed: error permanente (corrupto, sin texto) o attempt_limit alcanzado
+    failed --> queued: POST /documents/{id}/retry (sube attempt_limit)
     processing --> queued: lease vencido (worker muerto), lo detecta el reconciliador
+    retrying --> queued: mensaje de reintento perdido, lo detecta el reconciliador
+    queued --> failed: el reconciliador ve attempt ≥ attempt_limit
 ```
+
+Todo estado no terminal tiene un plazo en `lease_expires_at`. El reconciliador (`ingestion.reconcile`, cada 60 s
+con el beat embebido en el worker) vuelve a encolar lo que venció. Volver a `queued` invalida también al worker que
+tenía el lease, porque todas sus escrituras exigen `attempt = mío AND status = 'processing'`.
 
 El documento nunca se pierde: los bytes y la fila sobreviven a cualquier fallo, y `failed` muestra `error_code` en la UI.
 
@@ -134,8 +139,11 @@ sequenceDiagram
     R->>W: entrega (acks_late)
     W->>PG: UPDATE … SET status=processing, attempt=attempt+1, lease WHERE claimable
     W->>W: extrae texto → fragmenta (offsets)
-    W->>E: embed_documents (por lotes, fuera de transacción)
-    W->>PG: TX: DELETE fragmentos del intento + INSERT + is_current swap + status=ready WHERE attempt=mío
+    loop por lote de 64 fragmentos
+        W->>E: embed_documents (fuera de transacción)
+        W->>PG: renueva el lease WHERE attempt=mío
+    end
+    W->>PG: TX: INSERT fragmentos + is_current swap + status=ready WHERE attempt=mío
     loop polling cada 2 s mientras no sea terminal
         UI->>API: GET /api/v1/documents
     end

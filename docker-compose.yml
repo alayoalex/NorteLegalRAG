@@ -82,6 +82,9 @@ services:
       - --loglevel=INFO
       - --queues=ingestion
       - --concurrency=${WORKER_CONCURRENCY:-2}
+      # Beat embebido: programa el reconciliador. Válido con un solo worker (DECISIONS.md).
+      - --beat
+      - --schedule=/tmp/celerybeat-schedule
     depends_on:
       migrate:
         condition: service_completed_successfully
