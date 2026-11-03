@@ -52,6 +52,10 @@ services:
     <<: *backend
     ports:
       - "8000:8000"
+    # Alias único: en producción nginx comparte red con otros proyectos y "api" resolvería a un contenedor ajeno.
+    networks:
+      default:
+        aliases: [nortelegal-api]
     depends_on:
       migrate:
         condition: service_completed_successfully

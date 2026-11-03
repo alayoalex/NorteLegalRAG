@@ -66,7 +66,24 @@ outbox, *polling* frente a SSE, volumen compartido frente a almacenamiento de ob
 `HNSW` con `vector_cosine_ops`, `m=16`, `ef_construction=128`, `hnsw.ef_search=100` en consulta, **parcial**
 `WHERE is_current`. Justificación ampliada en la sección de recuperación cuando haya mediciones.
 
-## 7. Uso de IA generativa
+## 7. Despliegue de la demo
+
+**Decisión:** un único servidor con Docker Compose detrás de un Caddy que ya existía y se comparte con otros
+proyectos. Es el mismo compose de desarrollo más un *override* (`docker-compose.prod.yml`), sin orquestador. Caddy
+emite los certificados TLS. La interfaz es pública. Trazas y métricas exigen autenticación básica en Caddy porque
+muestran rutas, tiempos e identificadores internos.
+
+**Problema encontrado:** la red de Caddy es compartida y otro proyecto tiene un servicio llamado `api`. El nginx del
+frontend, conectado a las dos redes, resolvía `api` al contenedor ajeno. Por eso los servicios que tocan la red
+compartida se nombran con alias propios (`nortelegal-web`, `nortelegal-otel`, `nortelegal-jaeger`) y nginx apunta a
+`nortelegal-api`.
+
+**Qué se sacrificó:** alta disponibilidad, copias de seguridad automáticas de PostgreSQL y despliegue continuo. El
+despliegue es manual con `scripts/deploy.sh`, que construye, espera a los *healthchecks* y comprueba los dominios. Un
+despliegue continuo desde GitHub Actions exigiría guardar una clave SSH del servidor en un repositorio público. Para
+una demo no compensa.
+
+## 8. Uso de IA generativa
 
 _Se completa al final: qué se generó con IA, qué se reescribió y cómo se verificó (pruebas, lectura línea a línea y
 mediciones)._

@@ -34,6 +34,7 @@ docs/architecture.md         Diagramas y flujos (versionado)
 docs/dataset.md              Dataset de evaluación y licencias
 data/samples/                Documentos de ejemplo versionados (pequeños, con licencia compatible)
 eval/                        Preguntas de evaluación, script y resultados
+scripts/deploy.sh            Despliegue en el servidor detrás del Caddy compartido (ver README)
 ```
 
 ## Comandos
@@ -50,6 +51,8 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy
 uv run alembic revision -m "descripcion"      # Nueva migración (escrita a mano, ver reglas)
 
 cd frontend && npm ci && npm run dev          # Vite en :5173, proxy a la API en :8000
+
+./scripts/deploy.sh                           # Producción (servidor): compose base + docker-compose.prod.yml
 ```
 
 Antes de dar por terminado un cambio en el backend: `ruff check`, `ruff format --check`, `mypy` y `pytest`, todos en verde.
@@ -129,7 +132,7 @@ instrumentado. Detalle en `docs/architecture.md`.
 
 | Hito | Contenido | Estado |
 |---|---|---|
-| M0 | Esqueleto: compose, migración inicial, puertos, simulados, traza HTTP → Celery → LLM probada, CI | hecho; **falta verificar `docker compose up --build`** (pytest, ruff, mypy y el build del frontend sí están verificados) |
+| M0 | Esqueleto: compose, migración inicial, puertos, simulados, traza HTTP → Celery → LLM probada, CI. Despliegue en https://nortelegal.mizpa.io | hecho |
 | M1 | Ingesta: validación de archivo (magic bytes, tamaño, zip bomb), almacén de blobs, versionado e idempotencia, extracción PDF/DOCX/TXT, fragmentador con offsets, tarea con lease y reintentos, reconciliador | pendiente |
 | M2 | Frontend: carga, lista con estado por *polling*, errores visibles y reintento | pendiente |
 | M3 | Consulta: búsqueda híbrida (HNSW + FTS + RRF), constructor de prompt, validación de citas, adaptadores Anthropic y Voyage, degradación ante fallos, pantalla de preguntas | pendiente |

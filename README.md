@@ -26,8 +26,29 @@ Prueba de la traza de extremo a extremo: `curl -X POST http://localhost:8000/api
 
 ## Con claves de LLM
 
-_Disponible en el hito M3._ Copia `env.example` a `.env` y configura `LLM_PROVIDER`, `EMBEDDING_PROVIDER` y las
+_Disponible en el hito M3._ Copia `.env.example` a `.env` y configura `LLM_PROVIDER`, `EMBEDDING_PROVIDER` y las
 claves.
+
+## Demo desplegada
+
+| Servicio | URL |
+|---|---|
+| Interfaz | https://nortelegal.mizpa.io |
+| Trazas (Jaeger) | https://nortelegal-traces.mizpa.io (con credenciales) |
+| Métricas (Prometheus) | https://nortelegal-metrics.mizpa.io (con credenciales) |
+
+Las credenciales de trazas y métricas se entregan aparte.
+
+### Cómo se despliega
+
+Un servidor con Docker y un Caddy compartido, que termina TLS y enruta por la red externa `mizpa-network`.
+`docker-compose.prod.yml` se aplica sobre el compose base: no publica puertos en el host, reinicia los contenedores
+y exige `POSTGRES_PASSWORD`. Solo el frontend, el colector y Jaeger entran en la red compartida, con alias propios.
+
+```bash
+cp .env.example .env            # y cambia POSTGRES_PASSWORD
+./scripts/deploy.sh             # construye, espera a que todo esté sano y comprueba los dominios públicos
+```
 
 ## Pruebas
 

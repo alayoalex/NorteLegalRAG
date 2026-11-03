@@ -1,0 +1,52 @@
+# Despliegue en el servidor, detrás del Caddy compartido (red externa mizpa-network). Se aplica sobre el base:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# Diferencias con desarrollo: ningún puerto se publica en el host (Caddy termina TLS y entra por la red),
+# los contenedores se reinician solos y la contraseña de PostgreSQL es obligatoria.
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+  postgres:
+    <<: *restart
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
+
+  redis:
+    <<: *restart
+
+  api:
+    <<: *restart
+    ports: !reset []
+
+  worker:
+    <<: *restart
+
+  # Alias con prefijo: la red es compartida con otros proyectos y "frontend" o "jaeger" colisionarían.
+  frontend:
+    <<: *restart
+    ports: !reset []
+    networks:
+      default:
+      mizpa-network:
+        aliases: [nortelegal-web]
+
+  otel-collector:
+    <<: *restart
+    ports: !reset []
+    networks:
+      default:
+      mizpa-network:
+        aliases: [nortelegal-otel]
+
+  jaeger:
+    <<: *restart
+    ports: !reset []
+    networks:
+      default:
+      mizpa-network:
+        aliases: [nortelegal-jaeger]
+
+networks:
+  mizpa-network:
+    external: true
