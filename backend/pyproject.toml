@@ -6,8 +6,9 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "alembic>=1.13",
     "celery[redis]>=5.4",
-    "fastapi>=0.115",
+    # Transporte del SDK de openai; el adaptador lo usa para el plazo total por petición.
     "httpx2>=2.16.0",
+    "fastapi>=0.115",
     "openai>=3.37.0",
     "opentelemetry-exporter-otlp-proto-http>=1.27",
     "opentelemetry-instrumentation-celery>=0.48b0",

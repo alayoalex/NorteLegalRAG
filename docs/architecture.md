@@ -14,7 +14,7 @@ flowchart LR
     redis -->|consume| worker[worker<br/>Celery]
     worker -->|lee bytes| blobs
     worker -->|SQL| pg
-    worker -->|embeddings| emb[[Proveedor de embeddings<br/>fake / Voyage]]
+    worker -->|embeddings| emb[[Proveedor de embeddings<br/>fake / OpenRouter]]
     api -->|embedding de consulta| emb
     api -->|generación| llm[[Proveedor LLM<br/>fake / OpenRouter]]
     api -. OTLP .-> otel[otel-collector]
@@ -40,7 +40,7 @@ flowchart TB
     end
     subgraph salida [Adaptadores de salida]
         repo[db/ repositorios SQLAlchemy]
-        prov[adapters/ fake · openrouter · voyage]
+        prov[adapters/ fake · openrouter]
         traced[adapters/traced<br/>decorador OTel]
         store[almacén de blobs]
     end

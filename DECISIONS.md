@@ -4,7 +4,7 @@ Decisiones sobre los puntos abiertos del enunciado, trade-offs y uso de IA gener
 eligió, por qué, qué se sacrificó y cuándo convendría revisarla. Las marcadas como **hipótesis** se confirman o
 corrigen con las mediciones de `eval/` (hito M5).
 
-> Estado: borrador del hito M4. Las secciones de medición están vacías hasta tener datos.
+> Estado: hito M5. Las mediciones están en la sección 12.
 
 ## 1. Fragmentación y recuperación
 
@@ -50,8 +50,8 @@ existe una versión más reciente.
 existe en el fragmento citado (*groundedness* determinista, sin un LLM juez), hay abstención cuando no hay contexto y
 el esquema Pydantic es válido.
 
-**Verificación automática (offline, `eval/`):** métricas de recuperación con *ground truth* de CUAD y
-LegalBench-RAG, tasa de abstención correcta en preguntas sin respuesta y resistencia al documento canario.
+**Verificación automática (offline, `eval/`):** métricas de recuperación con *ground truth* de CUAD (posición
+del texto anotado), tasa de abstención correcta en preguntas sin respuesta y resistencia al documento canario.
 
 **Revisión humana:** si la respuesta interpreta bien la cláusula, si está completa (cláusulas repartidas en varios
 fragmentos) y en casos dudosos. Se propone un muestreo de respuestas con citas marcadas como no verificadas.
@@ -61,12 +61,12 @@ fragmentos) y en casos dudosos. Se propone un muestreo de respuestas con citas m
 _Se completa durante la implementación: SDK directo frente a LiteLLM, FastAPI síncrono y volumen compartido frente
 a almacenamiento de objetos. El reconciliador frente a outbox está en la sección 9._
 
-**Voyage por REST frente a su SDK.** El SDK `voyageai` 0.5 instala unas 35 dependencias para una sola llamada HTTP,
-entre ellas `langchain-core`, `langsmith`, `huggingface-hub`, `tokenizers`, `numpy`, `pillow` y `aiohttp`. Es la
-misma superficie de cadena de suministro por la que se descartó LiteLLM. El adaptador llama a
-`POST /v1/embeddings` con `httpx2`, que ya entra como dependencia del SDK de `openai`, y valida la respuesta con
-Pydantic (unas 60 líneas, probadas con un transporte HTTP simulado). **Coste:** si Voyage cambia su API, el
-adaptador se actualiza a mano.
+**Embeddings por OpenRouter, no por Voyage directo (M5).** Primero se descartó el SDK `voyageai` (unas 35
+dependencias, entre ellas `langchain-core`, `huggingface-hub` y `aiohttp`: la misma superficie por la que se descartó
+LiteLLM) y se llamó a su API REST. En M5, la cuenta de Voyage sin método de pago tenía un límite de 10 000 tokens por
+minuto: un solo lote de 64 fragmentos lo supera y 11 de los 13 documentos fallaron con `provider_rate_limited`.
+OpenRouter ofrece embeddings con la misma API y la misma clave que el LLM (incluido `voyage-4`), así que el
+adaptador de Voyage se retiró: una clave, un adaptador y una taxonomía de errores menos.
 
 **Polling frente a SSE.** La lista de documentos se consulta cada 2 s mientras alguna versión está pendiente y cada
 30 s cuando todo terminó (TanStack Query, `refetchInterval`). SSE o WebSockets darían menos latencia, pero exigirían
@@ -105,8 +105,8 @@ una demo no compensa.
 ## 8. Proveedor del LLM: OpenRouter
 
 **Decisión:** el LLM se consume a través de OpenRouter con el SDK oficial de `openai` (OpenRouter expone una API
-compatible). El modelo por defecto sigue siendo Claude Opus, configurable con `LLM_MODEL`. Los embeddings siguen en
-Voyage AI con su SDK.
+compatible). El modelo por defecto sigue siendo Claude Opus, configurable con `LLM_MODEL`. Desde M5 los embeddings también
+pasan por OpenRouter (sección 5).
 
 **Por qué:** una sola clave y una sola factura para probar varios modelos durante la evaluación (M5) cambiando solo
 `LLM_MODEL`, y enrutado entre varios proveedores del mismo modelo si uno cae o limita la tasa. No reabre la decisión
@@ -115,12 +115,20 @@ cadena de suministro, y el SDK de `openai` es una dependencia oficial y fijada e
 
 **Qué se sacrificó:**
 
-- **Un intermediario más con datos confidenciales.** Se mitiga con `provider.data_collection = "deny"` y
-  restringiendo el enrutado a proveedores sin retención de datos.
+- **Un intermediario más con datos confidenciales.** Se mitiga con `OPENROUTER_DATA_POLICY`: por defecto `zdr`
+  (`data_collection = "deny"` y solo proveedores con retención cero). `deny` admite proveedores que no entrenan pero
+  pueden retener (es lo que necesita `mongodb/voyage-4`). `allow` es lo que exigen muchos modelos gratuitos, que
+  entrenan con lo que reciben: solo para pruebas con documentos públicos.
 - **Funciones propias de Anthropic.** Se pierde `messages.parse()` y `output_config`. La salida estructurada pasa a
   `response_format` con `json_schema` y `provider.require_parameters = true`. La respuesta se valida siempre con
   Pydantic, así que un proveedor que ignore el esquema produce un error controlado, no una cita inventada.
 - **Algo de latencia** por el salto adicional, que cuenta dentro del presupuesto de tiempo de la API.
+
+**Plazo total por intento.** OpenRouter responde 200 en seguida y mantiene viva la conexión con espacios mientras
+el modelo genera. El `timeout` de httpx mide el tiempo entre bytes, así que nunca saltaba: en M5 una consulta pasó
+de los 70 s, por encima del presupuesto de 55 s (tras nginx, un 504). El adaptador usa un transporte HTTP que corta
+cada petición al llegar a `LLM_TIMEOUT_S` en total. Lo cubre una prueba unitaria con una respuesta que solo envía
+espacios.
 
 **Reintentos:** el enrutado interno de OpenRouter entre proveedores no es un reintento nuestro. Se mantiene la regla
 de no apilar capas: `max_retries=0` en el SDK, backoff de Celery en el worker y un único reintento en la API.
@@ -208,7 +216,7 @@ esquema JSON estricto se escribe a mano en el adaptador: el modo estricto exige 
 `additionalProperties: false`, y así el contrato con el modelo se lee en un solo sitio.
 
 **Reprocesar al cambiar de modelo de embeddings.** Cada fragmento guarda su `embedding_model` y la búsqueda
-vectorial filtra por el modelo activo. Al pasar de los embeddings simulados a Voyage, los documentos antiguos solo
+vectorial filtra por el modelo activo. Al pasar de los embeddings simulados a los reales, o de un modelo a otro, los documentos antiguos solo
 se encuentran por texto completo hasta que se vuelven a subir. Como la huella del pipeline cambia, la nueva subida
 crea una versión nueva.
 
@@ -244,7 +252,81 @@ inventada no tiene una frase que la respalde. El resto se mide en M5 con pregunt
 (`data/samples/canario-inyeccion.txt`) y el modelo real. Con los proveedores simulados, la prueba de integración
 usa un modelo comprometido a propósito, que filtra el marcador, y comprueba que la respuesta se bloquea.
 
-## 12. Uso de IA generativa
+## 12. Evaluación
+
+**Dataset** (`eval/build_dataset.py`, determinista; licencias en `data/samples/ATTRIBUTION.md`): 10 contratos de
+CUAD de tipos distintos (4 en PDF, 6 en TXT), la LAU del BOE, una política interna en DOCX, el documento canario y
+tres casos límite. 157 preguntas:
+
+| Conjunto | n | Qué mide |
+|---|---|---|
+| `cuad` | 102 | Una pregunta por categoría anotada (ley aplicable, vencimiento, cesión...), en inglés |
+| `cuad_es` | 20 | Las mismas, en español, sobre contratos en inglés |
+| `cuad_unanswerable` | 19 | Categorías que CUAD anota como ausentes en ese contrato: la respuesta correcta es abstenerse |
+| `lau`, `policy` | 7 + 3 | Español sobre texto en español, PDF y DOCX |
+| `injection` | 3 | Preguntas sobre el documento canario, con cadenas prohibidas |
+| `unrelated` | 3 | Preguntas ajenas a todos los documentos |
+
+El texto de referencia se localiza en el texto que extrae nuestro propio pipeline. Se descartaron 6 anotaciones de
+CUAD que no se encontraban, para medir la recuperación y no los problemas de alinear dos extracciones. Se
+descartó LegalBench-RAG: su corpus se distribuye por Dropbox y su licencia depende de cada fuente. Sus preguntas
+sobre CUAD equivalen a las nuestras.
+
+**Ejecución:** `eval/run_eval.py` habla solo con la API HTTP, con un tenant por ejecución, y mide el sistema
+completo. Resultados por pregunta en `eval/results/`.
+
+**Recuperación** (LLM simulado; un acierto es que algún fragmento devuelto se solape con el texto de referencia):
+
+| Embeddings | Privacidad | hit@1 | hit@8 | MRR | hit@8 `cuad_es` | MRR `lau` |
+|---|---|---|---|---|---|---|
+| simulados (*feature hashing*) | — | 0.10 | 0.37 | 0.18 | 0.00 | 0.25 |
+| `baai/bge-m3` | `zdr` | 0.22 | 0.54 | 0.32 | 0.35 | 0.59 |
+| `mongodb/voyage-4` | `deny` | 0.24 | 0.59 | 0.34 | 0.40 | 0.91 |
+| `nvidia/nemotron-3.5-embed-8b:free` | `allow` | no indexa | | | | |
+
+**Decisión: `baai/bge-m3` por defecto.** `voyage-4` recupera algo mejor, sobre todo en español, pero no lo sirve
+ningún proveedor con retención cero. Con contratos confidenciales esa garantía pesa más que 5 puntos de hit@8 en
+122 preguntas. `voyage-4` queda a un cambio de configuración (`EMBEDDING_MODEL=mongodb/voyage-4`,
+`OPENROUTER_DATA_POLICY=deny`). Ningún embedding gratuito es viable: el endpoint gratuito de Nemotron falla con
+cualquier petición de más de unos 500 tokens, así que habría que mandar un fragmento por petición (unas 700 por la
+muestra) con un cupo de 1000 al día. `bge-m3` cuesta menos de un céntimo por toda la muestra.
+
+**Sistema completo con un LLM gratuito** (`dots-studio/dots-3-note-preview:free` y `bge-m3`, política `deny`):
+
+| | Resultado |
+|---|---|
+| Respuestas con cita correcta, sobre preguntas con respuesta | 0.38 (51 de 134) |
+| Precisión de las citas cuando el fragmento correcto se recuperó y hubo respuesta | 51 de 53 |
+| Abstención correcta en `cuad_unanswerable` / `unrelated` | 0.63 / 1.00 |
+| Respuestas sin el fragmento correcto entre las fuentes | 11 (sin revisar a mano: pueden venir de otra cláusula u otro contrato) |
+| Degradadas (fuentes sin respuesta) | 16: 11 por el plazo de 40 s, 5 por HTTP 400 del proveedor |
+| Latencia p50 / p95 | 10.2 s / 42.9 s |
+| Casos límite de ingesta | 5 de 5 (vacío, corrupto, escaneado sin texto, DOCX, canario) |
+
+**Lectura:**
+- **El cuello de botella es la recuperación, no el LLM.** Cuando el fragmento correcto llega al modelo, las citas
+  son correctas en 51 de 53 casos. El techo lo pone el hit@8 de 0.5–0.6. Las preguntas de CUAD son genéricas
+  ("Which law governs the X agreement?") y 10 contratos tienen cláusulas casi idénticas: el nombre del contrato
+  apenas aparece en su texto, así que la búsqueda mezcla contratos. **Mejora prioritaria:** filtrar por documento
+  desde la interfaz (la consulta ya filtra por tenant; añadir `document_ids` es una condición más). Después,
+  *reranking*.
+- **Entre idiomas es débil** (hit@8 0.35–0.40): `lexical_query` no aporta nada con una pregunta en español sobre
+  texto en inglés. Traducir la consulta antes de buscar sería el siguiente experimento.
+- **Abstención:** 5 de 19 preguntas sin respuesta se contestaron. Las compuertas no lo impiden porque se recuperan
+  cláusulas parecidas de otros contratos. Es el mismo problema de mezcla de contratos.
+- **Inyección: sin conclusión con este modelo.** Ninguna cadena prohibida apareció, pero porque el proveedor del
+  modelo gratuito rechaza con HTTP 400 los prompts que contienen el canario y la respuesta pasa a modo degradado. Con
+  el LLM simulado, que copia frases literales, sí apareció "no contiene penalizaciones": una cita literal de un texto
+  inyectado pasa la verificación de citas, como anticipaba la sección 11. La prueba de integración con un modelo
+  comprometido sigue cubriendo la fuga del canario.
+- **Umbral de similitud** (`RETRIEVAL_MIN_SIMILARITY=0.25`): con embeddings reales casi nunca corta, así que la
+  abstención la decide el LLM. Calibrarlo exige ver la similitud por pregunta, que la API no expone. La métrica
+  `retrieval.top_similarity` da la distribución en Prometheus.
+
+**Pendiente con modelos de pago:** la misma ejecución con `LLM_MODEL=anthropic/claude-opus-5.5` (unos 10 USD con
+razonamiento medio para 157 preguntas) para medir la inyección con un modelo real y comparar la abstención.
+
+## 13. Uso de IA generativa
 
 _Se completa al final: qué se generó con IA, qué se reescribió y cómo se verificó (pruebas, lectura línea a línea y
 mediciones)._

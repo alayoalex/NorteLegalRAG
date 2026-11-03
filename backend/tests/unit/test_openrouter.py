@@ -1,7 +1,7 @@
 """Adaptador de OpenRouter contra un transporte HTTP simulado: sin red ni claves."""
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 
 import httpx2
 import openai
@@ -113,3 +113,50 @@ def test_translates_timeouts() -> None:
 
     with pytest.raises(errors.ProviderTimeoutError):
         _provider(handler).generate_answer(PROMPT)
+
+
+def test_the_data_policy_reaches_the_provider_preferences() -> None:
+    sent: list[dict] = []  # type: ignore[type-arg]
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        sent.append(json.loads(request.content))
+        return httpx2.Response(200, json=_completion(json.dumps(ANSWER)))
+
+    client = openai.OpenAI(
+        api_key="test",
+        base_url=OPENROUTER_BASE_URL,
+        max_retries=0,
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
+    )
+    provider = OpenRouterLLMProvider("test", "m:free", "low", 5.0, "allow", client=client)
+    provider.generate_answer(PROMPT)
+    assert sent[0]["provider"] == {"require_parameters": True, "data_collection": "allow"}
+
+
+def test_a_response_that_keeps_the_connection_alive_is_cut_at_the_deadline() -> None:
+    """OpenRouter envía espacios mientras genera: el timeout entre bytes de httpx no basta."""
+    import time
+
+    from norte_legal.adapters.openrouter import _DeadlineTransport
+
+    def keepalive() -> Iterator[bytes]:
+        for _ in range(20):
+            time.sleep(0.02)
+            yield b" "
+        yield json.dumps(_completion(json.dumps(ANSWER))).encode()
+
+    transport = _DeadlineTransport(
+        0.1, inner=httpx2.MockTransport(lambda _: httpx2.Response(200, content=keepalive()))
+    )
+    client = openai.OpenAI(
+        api_key="test",
+        base_url=OPENROUTER_BASE_URL,
+        max_retries=0,
+        http_client=httpx2.Client(transport=transport),
+    )
+    provider = OpenRouterLLMProvider("test", "m", "low", 0.1, client=client)
+
+    started = time.monotonic()
+    with pytest.raises(errors.ProviderTimeoutError):
+        provider.generate_answer(PROMPT)
+    assert time.monotonic() - started < 0.3

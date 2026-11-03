@@ -1,0 +1,7 @@
+{
+  "vacio.txt": "rejected:empty_file",
+  "corrupto.pdf": "failed:corrupt_file",
+  "escaneado.pdf": "failed:no_text_extracted",
+  "politica-teletrabajo.docx": "ready",
+  "canario-inyeccion.txt": "ready"
+}

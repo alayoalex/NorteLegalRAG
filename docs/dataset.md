@@ -23,7 +23,8 @@ se descarga en `data/raw/`, que no se versiona.
 curl -L -o data/raw/CUAD_v1.zip https://zenodo.org/records/4595826/files/CUAD_v1.zip
 ```
 
-LegalBench-RAG publica su corpus y sus *benchmarks* en una carpeta de Dropbox enlazada desde el README del
+**Finalmente no se usó** (DECISIONS.md §12): sus preguntas sobre CUAD equivalen a las de `eval/build_dataset.py` y su
+corpus se distribuye por Dropbox con licencias por fuente. Como referencia: LegalBench-RAG publica su corpus y sus *benchmarks* en una carpeta de Dropbox enlazada desde el README del
 repositorio. Se descargan en `data/raw/legalbenchrag/` con la estructura `corpus/` y `benchmarks/*.json`.
 
 ## Cómo se convierten en preguntas de evaluación
@@ -38,3 +39,14 @@ repositorio. Se descargan en `data/raw/legalbenchrag/` con la estructura `corpus
 
 Las métricas se calculan con `eval/` y se publican en `DECISIONS.md`. Cada resultado indica el proveedor de
 embeddings y de LLM usados: los simulados solo miden el pipeline, no la calidad semántica.
+
+## Reproducir
+
+```bash
+# 1. Fuentes en data/raw/ (no versionado): CUAD (arriba) descomprimido en data/raw/cuad/ y la LAU
+curl -L -o data/raw/lau.pdf https://www.boe.es/buscar/pdf/1994/BOE-A-1994-26003-consolidado.pdf
+# 2. Muestra y preguntas (deterministas: regeneran lo que ya está versionado)
+cd backend && uv run python ../eval/build_dataset.py
+# 3. Contra un stack en marcha; EVAL_LLM y EVAL_EMBEDDINGS solo etiquetan el informe
+EVAL_LLM=... EVAL_EMBEDDINGS=... uv run python ../eval/run_eval.py --label mi-ejecucion
+```
