@@ -31,6 +31,8 @@ backend/                     Python 3.12, uv. Una imagen para api, worker y migr
   tests/unit, tests/integration
   tests/factories.py         PDF, DOCX y ZIP generados en memoria para las pruebas
 frontend/                    React + Vite + TypeScript + TanStack Query, servido por nginx
+  src/api.ts                 Cliente tipado; los tipos reflejan api/schemas.py. Errores por `code`
+  src/messages.ts            Textos en español para cada estado y cada `code` de la API
 infra/otel/                  Configuración del colector de OpenTelemetry
 docs/architecture.md         Diagramas y flujos (versionado)
 docs/dataset.md              Dataset de evaluación y licencias
@@ -142,7 +144,7 @@ instrumentado. Detalle en `docs/architecture.md`.
 |---|---|---|
 | M0 | Esqueleto: compose, migración inicial, puertos, simulados, traza HTTP → Celery → LLM probada, CI. Despliegue en https://nortelegal.mizpa.io | hecho |
 | M1 | Ingesta: validación de archivo (magic bytes, tamaño, zip bomb), almacén de blobs, versionado e idempotencia, extracción PDF/DOCX/TXT, fragmentador con offsets, tarea con lease y reintentos, reconciliador | hecho |
-| M2 | Frontend: carga, lista con estado por *polling*, errores visibles y reintento | pendiente |
+| M2 | Frontend: carga, lista con estado por *polling*, errores visibles y reintento | hecho |
 | M3 | Consulta: búsqueda híbrida (HNSW + FTS + RRF), constructor de prompt, validación de citas, adaptadores OpenRouter y Voyage, degradación ante fallos, pantalla de preguntas | pendiente |
 | M4 | Observabilidad (métricas de ingesta y recuperación), pulido de errores, mitigación de inyección con documento canario | pendiente |
 | M5 | Dataset, preguntas de evaluación, script de métricas, resultados en DECISIONS.md, README final | pendiente |

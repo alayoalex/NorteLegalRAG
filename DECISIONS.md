@@ -58,8 +58,14 @@ fragmentos) y en casos dudosos. Se propone un muestreo de respuestas con citas m
 
 ## 5. Trade-offs principales
 
-_Se completa durante la implementación: SDK directo frente a LiteLLM, FastAPI síncrono, reconciliador frente a
-outbox, *polling* frente a SSE, volumen compartido frente a almacenamiento de objetos._
+_Se completa durante la implementación: SDK directo frente a LiteLLM, FastAPI síncrono y volumen compartido frente
+a almacenamiento de objetos. El reconciliador frente a outbox está en la sección 9._
+
+**Polling frente a SSE.** La lista de documentos se consulta cada 2 s mientras alguna versión está pendiente y cada
+30 s cuando todo terminó (TanStack Query, `refetchInterval`). SSE o WebSockets darían menos latencia, pero exigirían
+una conexión abierta por pestaña y un canal desde el worker a la API (Redis pub/sub), que hoy no existe porque Redis
+es solo transporte desechable. Con ingestas de segundos o minutos, 2 s de retraso no se notan y el polling reutiliza
+el mismo `GET` que ya hace falta para pintar la lista.
 
 ## 6. Índice vectorial
 

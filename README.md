@@ -3,8 +3,9 @@
 Asistente de conocimiento para contratos y políticas: ingesta asíncrona de documentos y respuestas con citas
 verificables. Construido con FastAPI, Celery con Redis, PostgreSQL con pgvector, React y OpenTelemetry.
 
-> **Estado:** hito M1 (ingesta). Los documentos se suben, se validan y se versionan, y un worker los fragmenta y
-> calcula sus embeddings. La interfaz y la consulta están en desarrollo (ver `CLAUDE.md`).
+> **Estado:** hito M2. Desde la interfaz se suben documentos y se sigue su procesamiento, con errores visibles y
+> reintento. Un worker los valida, versiona, fragmenta y calcula sus embeddings. La consulta está en desarrollo (ver
+> `CLAUDE.md`).
 
 ## Ejecutar desde cero (sin claves)
 
