@@ -1,0 +1,38 @@
+# Documento privado de preparación: NO se versiona (ver CLAUDE.md)
+/tradeoffs.md
+
+# Enunciado: contiene el enlace privado de entrega y el repo será público
+/docs/prueba-tecnica-*.pdf
+
+# Secretos y configuración local
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Datasets descargados: solo se versionan las muestras de data/samples
+/data/raw/
+
+# Editores y SO
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Estado local de Claude Code
+.claude/settings.local.json
