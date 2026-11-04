@@ -23,7 +23,7 @@ docker compose up --build
 | Interfaz | http://localhost:8080 |
 | API (OpenAPI) | http://localhost:8000/docs |
 | Trazas (Jaeger) | http://localhost:16686 |
-| Métricas (Prometheus) | http://localhost:8889/metrics |
+| Métricas (endpoint de *scraping* Prometheus, texto plano) | http://localhost:8889/metrics |
 
 Subir un documento (PDF, DOCX o TXT, hasta 25 MiB) y seguir su estado:
 
@@ -71,9 +71,10 @@ sección, páginas y posición de carácter.
 |---|---|
 | Interfaz | https://nortelegal.mizpa.io |
 | Trazas (Jaeger) | https://nortelegal-traces.mizpa.io (con credenciales) |
-| Métricas (Prometheus) | https://nortelegal-metrics.mizpa.io (con credenciales) |
+| Métricas (endpoint de *scraping* Prometheus) | https://nortelegal-metrics.mizpa.io/metrics (con credenciales) |
 
-Las credenciales de trazas y métricas se entregan aparte.
+Las credenciales de trazas y métricas se entregan aparte. La URL de métricas no es un panel: es el texto que publica
+el colector de OpenTelemetry para que lo lea un servidor Prometheus, que no forma parte de la demo (DECISIONS.md §11).
 
 ### Cómo se despliega
 

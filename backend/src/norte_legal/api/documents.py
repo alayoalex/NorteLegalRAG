@@ -1,4 +1,4 @@
-"""Rutas de documentos: subida, estado de la ingesta, reintento y resolución de fragmentos."""
+"""Rutas de documentos: subida, estado, reintento, borrado y resolución de fragmentos."""
 
 import uuid
 from typing import Annotated
@@ -114,6 +114,23 @@ def retry_document(document_id: uuid.UUID, tenant_id: TenantId, session: DbSessi
         ) from error
     enqueue_ingestion(version.id)
     return VersionOut.build(version, current_version_id=None)
+
+
+@router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(document_id: uuid.UUID, tenant_id: TenantId, session: DbSession) -> None:
+    """Borrado lógico: el documento deja de listarse y de buscarse, pero sus citas siguen
+    resolviéndose con `GET /chunks/{id}` (`document_deleted: true`)."""
+    try:
+        ingestion.delete_document(session, tenant_id=tenant_id, document_id=document_id)
+    except LookupError as error:
+        raise _document_not_found() from error
+    except ValueError as error:
+        raise ProblemError(
+            status.HTTP_409_CONFLICT,
+            "document_processing",
+            "Document is being processed",
+            "wait until processing finishes before deleting",
+        ) from error
 
 
 @router.get("/chunks/{chunk_id}", response_model=ChunkOut)

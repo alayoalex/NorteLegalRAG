@@ -34,11 +34,13 @@ class DocumentRepository:
         """Devuelve el documento con su fila bloqueada hasta el final de la transacción.
 
         El bloqueo serializa las subidas concurrentes del mismo documento: el cálculo de
-        `version_no` y la comprobación de idempotencia no compiten entre sí.
+        `version_no` y la comprobación de idempotencia no compiten entre sí. Subir de nuevo un
+        documento borrado lo restaura.
         """
         statement = insert(Document).values(id=uuid.uuid4(), tenant_id=self._tenant_id, name=name)
         statement = statement.on_conflict_do_update(
-            constraint="uq_documents_tenant_name", set_={"name": statement.excluded.name}
+            constraint="uq_documents_tenant_name",
+            set_={"name": statement.excluded.name, "deleted_at": None},
         )
         return self._session.execute(statement.returning(Document.id)).scalar_one()
 
@@ -100,10 +102,48 @@ class DocumentRepository:
         self._session.refresh(version)
         return version
 
+    def make_current(self, document_id: uuid.UUID, version_id: uuid.UUID) -> None:
+        """Vuelve a hacer vigente una versión lista. Solo para un documento sin versión vigente."""
+        self._session.execute(
+            update(Chunk)
+            .where(Chunk.tenant_id == self._tenant_id, Chunk.version_id == version_id)
+            .values(is_current=True)
+        )
+        self._session.execute(
+            update(Document)
+            .where(Document.tenant_id == self._tenant_id, Document.id == document_id)
+            .values(current_version_id=version_id)
+        )
+
+    def soft_delete(self, document: Document, deleted_at: datetime) -> None:
+        """Saca el documento de la lista y de la búsqueda. Versiones y fragmentos se conservan."""
+        self._session.execute(
+            update(Chunk)
+            .where(Chunk.tenant_id == self._tenant_id, Chunk.document_id == document.id)
+            .values(is_current=False)
+        )
+        document.current_version_id = None
+        document.deleted_at = deleted_at
+
+    def has_pending_versions(self, document_id: uuid.UUID, pending: tuple[str, ...]) -> bool:
+        return bool(
+            self._session.scalar(
+                select(
+                    select(DocumentVersion.id)
+                    .where(
+                        DocumentVersion.tenant_id == self._tenant_id,
+                        DocumentVersion.document_id == document_id,
+                        DocumentVersion.status.in_(pending),
+                    )
+                    .exists()
+                )
+            )
+        )
+
     def list_documents(self, limit: int) -> list[DocumentView]:
         documents = self._session.scalars(
             select(Document)
-            .where(Document.tenant_id == self._tenant_id)
+            .where(Document.tenant_id == self._tenant_id, Document.deleted_at.is_(None))
             .order_by(Document.created_at.desc(), Document.id)
             .limit(limit)
         ).all()
@@ -114,12 +154,20 @@ class DocumentRepository:
             if versions.get(document.id)
         ]
 
-    def get_document(self, document_id: uuid.UUID) -> tuple[DocumentView, list[DocumentVersion]]:
-        document = self._session.scalars(
-            select(Document).where(
-                Document.tenant_id == self._tenant_id, Document.id == document_id
-            )
-        ).one_or_none()
+    def get_document(
+        self, document_id: uuid.UUID, *, lock: bool = False
+    ) -> tuple[DocumentView, list[DocumentVersion]]:
+        """Documento no borrado con sus versiones. `lock` bloquea su fila hasta el final de la
+        transacción, como `lock_or_create_document`, para serializar borrado, reintento y subida.
+        """
+        statement = select(Document).where(
+            Document.tenant_id == self._tenant_id,
+            Document.id == document_id,
+            Document.deleted_at.is_(None),
+        )
+        if lock:
+            statement = statement.with_for_update()
+        document = self._session.scalars(statement).one_or_none()
         versions = self._versions_by_document([document_id]).get(document_id) if document else None
         if document is None or not versions:
             raise LookupError(document_id)

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { DOCUMENTS_QUERY_KEY, listDocuments, retryDocument } from "../api";
+import { DOCUMENTS_QUERY_KEY, deleteDocument, listDocuments, retryDocument } from "../api";
 import type { DocumentSummary, VersionStatus } from "../api";
 import { STATUS_LABELS, apiErrorMessage, errorMessage } from "../messages";
 
@@ -69,6 +69,14 @@ function DocumentRow({ document }: { document: DocumentSummary }) {
     mutationFn: () => retryDocument(document.id),
     onSettled: () => queryClient.invalidateQueries({ queryKey: DOCUMENTS_QUERY_KEY }),
   });
+  const remove = useMutation({
+    mutationFn: () => deleteDocument(document.id),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: DOCUMENTS_QUERY_KEY }),
+  });
+  const confirmRemove = () => {
+    const question = `¿Eliminar «${document.name}»? Dejará de usarse en las consultas; las citas ya mostradas seguirán disponibles.`;
+    if (window.confirm(question)) remove.mutate();
+  };
   const latest = document.latest_version;
   const current = document.current_version;
   const showsOlderVersion = current !== null && current.id !== latest.id;
@@ -96,15 +104,31 @@ function DocumentRow({ document }: { document: DocumentSummary }) {
       <td>{latest.chunk_count ?? "—"}</td>
       <td>{dateFormat.format(new Date(latest.created_at))}</td>
       <td>
-        {latest.status === "failed" && (
-          <button type="button" onClick={() => retry.mutate()} disabled={retry.isPending}>
-            {retry.isPending ? "Reintentando…" : "Reintentar"}
-          </button>
-        )}
-        {retry.isError && (
-          <div role="alert" className="error-text">
-            {apiErrorMessage(retry.error)}
-          </div>
+        <div className="actions">
+          {latest.status === "failed" && (
+            <button type="button" onClick={() => retry.mutate()} disabled={retry.isPending}>
+              {retry.isPending ? "Reintentando…" : "Reintentar"}
+            </button>
+          )}
+          {!isPending(document) && (
+            <button
+              type="button"
+              className="button--secondary"
+              onClick={confirmRemove}
+              disabled={remove.isPending}
+              aria-label={`Eliminar ${document.name}`}
+            >
+              {remove.isPending ? "Eliminando…" : "Eliminar"}
+            </button>
+          )}
+        </div>
+        {[retry, remove].map(
+          (mutation, index) =>
+            mutation.isError && (
+              <div key={index} role="alert" className="error-text">
+                {apiErrorMessage(mutation.error)}
+              </div>
+            ),
         )}
       </td>
     </tr>

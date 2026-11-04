@@ -73,6 +73,22 @@ consultas siguen usando la anterior.
 sigue resolviéndose (`GET /api/v1/chunks/{id}`) e indica `is_current: false`, de modo que la UI puede avisar de que
 existe una versión más reciente.
 
+**Borrado de documentos: lógico.** `DELETE /api/v1/documents/{id}` sirve para cualquier documento, también para una
+subida que falló al procesarse. En una transacción, con la fila del documento bloqueada, fija `deleted_at`, deja
+`current_version_id` en `NULL` y marca sus fragmentos con `is_current = false`. Con eso salen de la búsqueda sin tocar
+las consultas de recuperación, que ya filtran por `is_current`. Versiones y fragmentos no se borran, así que una cita
+ya mostrada sigue resolviéndose e indica `document_deleted: true`. Coincide con el invariante 3: un borrado es otro
+cambio de vigencia.
+
+- **Mientras se procesa, 409** (`document_processing`). Así ningún worker puede hacer vigente una versión de un
+  documento borrado, sin añadir un estado `cancelled`. El reintento y la subida bloquean la misma fila, de modo que
+  no compiten con el borrado.
+- **Subir de nuevo el mismo nombre lo restaura.** Si el contenido es idéntico a una versión `ready`, la idempotencia
+  devuelve esa versión y vuelve a ser la vigente. Si es distinto, se crea la versión siguiente.
+- **Los archivos rechazados al validar** (tamaño, formato, zip bomb) nunca se guardan: no hay nada que borrar.
+- **Qué no cubre:** el borrado lógico conserva el contenido (blob y fragmentos). Un borrado real, por ejemplo por el
+  derecho de supresión, exigiría una purga física aparte que invalidaría esas citas. Queda fuera del MVP.
+
 ## 4. Calidad de las respuestas sin conjunto etiquetado
 
 **Verificación automática (en cada respuesta):** las citas referencian solo fragmentos recuperados, la cita textual
@@ -278,6 +294,13 @@ en la traza de la petición.
 **Métricas añadidas** (tabla completa en `docs/architecture.md`): cola de ingesta según PostgreSQL, fragmentos por
 versión, similitud del mejor candidato (para calibrar el umbral en M5), citas descartadas y fugas del canario. La cola
 la publica el reconciliador. Redis no la sabe y, por el invariante 1, tampoco es la fuente de verdad.
+
+**Sin panel de métricas.** El colector publica las métricas en `:8889/metrics` (en la demo,
+`nortelegal-metrics.mizpa.io/metrics`) en el formato de exposición de Prometheus: es el texto que lee un servidor
+Prometheus, no un panel. No se incluye ni Prometheus ni Grafana. Serían dos servicios más que configurar, proteger y
+mantener en una demo de un solo servidor. Las trazas sí tienen interfaz (Jaeger). Para un panel basta con apuntar un
+Prometheus existente a ese endpoint, sin tocar las aplicaciones. Las consultas de ejemplo están en
+`docs/architecture.md`.
 
 **Errores.** Todo error HTTP es `problem+json` con un `code` estable y el `correlation_id` de la petición, incluidos un
 500 inesperado (`internal_error`) y una base de datos caída (503 `database_unavailable`). Los manejadores registran

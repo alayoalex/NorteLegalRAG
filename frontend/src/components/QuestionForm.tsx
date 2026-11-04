@@ -139,6 +139,9 @@ function CitationItem({ citation }: { citation: Citation }) {
           {apiErrorMessage(chunk.error)}
         </p>
       )}
+      {expanded && chunk.data?.document_deleted && (
+        <p className="muted">El documento se eliminó después de esta respuesta.</p>
+      )}
       {expanded && chunk.data && (
         <Highlighted
           text={chunk.data.text}

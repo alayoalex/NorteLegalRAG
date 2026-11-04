@@ -49,6 +49,8 @@ class Document(Base):
         ),
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Borrado lógico: deja de listarse y de buscarse, pero sus citas siguen resolviéndose.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class DocumentVersion(Base):

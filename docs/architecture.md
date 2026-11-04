@@ -66,6 +66,7 @@ erDiagram
         text tenant_id
         text name "único por tenant"
         uuid current_version_id FK
+        timestamptz deleted_at "borrado lógico"
     }
     document_versions {
         uuid id PK
@@ -185,7 +186,7 @@ cabeceras del mensaje. El `trace_id` es también el `correlation_id` de los logs
 `X-Correlation-ID` y se guarda en `document_versions.trace_id`. Con ese único identificador se encuentran los logs y
 la traza de cualquier documento.
 
-Métricas (OTLP → colector → Prometheus en `:8889`):
+Métricas (OTLP → colector → endpoint de *scraping* en `:8889`, formato de exposición de Prometheus):
 
 | Métrica | Tipo | Para qué |
 |---|---|---|
@@ -201,7 +202,7 @@ Métricas (OTLP → colector → Prometheus en `:8889`):
 | `rag.citations.dropped` | contador | citas del LLM que no se verificaron: señal de alucinación |
 | `rag.prompt_leaks` | contador | respuestas descartadas por contener el canario: inyección con éxito |
 
-Consultas de ejemplo en Prometheus (`:8889`):
+Consultas de ejemplo para un servidor Prometheus que lea `:8889` (no se incluye en el stack, DECISIONS.md §11):
 
 ```promql
 histogram_quantile(0.95, sum by (le) (rate(llm_request_duration_seconds_bucket[5m])))   # p95 del LLM

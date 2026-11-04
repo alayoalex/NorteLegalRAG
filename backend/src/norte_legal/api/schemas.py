@@ -90,6 +90,8 @@ class ChunkOut(BaseModel):
     version_id: uuid.UUID
     version_no: int
     is_current: bool
+    # El documento se borró después de citarse: la cita se resuelve, pero ya no se consulta.
+    document_deleted: bool
     ordinal: int
     text: str
     char_start: int
@@ -108,6 +110,7 @@ class ChunkOut(BaseModel):
             version_id=view.version.id,
             version_no=view.version.version_no,
             is_current=chunk.is_current,
+            document_deleted=document.deleted_at is not None,
             ordinal=chunk.ordinal,
             text=chunk.text,
             char_start=chunk.char_start,

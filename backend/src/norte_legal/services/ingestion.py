@@ -119,11 +119,12 @@ def register_upload(
         document_id = repository.lock_or_create_document(name)
         existing = repository.find_version(document_id, sha256, fingerprint)
         if existing is not None:
-            return UploadResult(
-                existing,
-                created=False,
-                current_version_id=repository.current_version_id(document_id),
-            )
+            current_version_id = repository.current_version_id(document_id)
+            # Una versión lista sin vigente solo ocurre si el documento se borró: se restaura.
+            if current_version_id is None and existing.status == "ready":
+                repository.make_current(document_id, existing.id)
+                current_version_id = existing.id
+            return UploadResult(existing, created=False, current_version_id=current_version_id)
         version = repository.add_version(
             document_id=document_id,
             content_sha256=sha256,
@@ -150,12 +151,27 @@ def retry_failed(session: Session, *, tenant_id: str, document_id: uuid.UUID) ->
     última versión no está en `failed`."""
     with session.begin():
         repository = DocumentRepository(session, tenant_id)
-        repository.get_document(document_id)
+        repository.get_document(document_id, lock=True)
         version = repository.requeue_failed(document_id, _now() + QUEUED_GRACE, MAX_ATTEMPTS)
     if version is None:
         raise ValueError(document_id)
     logger.info("retry_requested", version_id=str(version.id), attempt=version.attempt)
     return version
+
+
+def delete_document(session: Session, *, tenant_id: str, document_id: uuid.UUID) -> None:
+    """Borrado lógico. Lanza `LookupError` si no existe y `ValueError` si una versión se está
+    procesando: así ningún worker puede hacer vigente una versión de un documento borrado.
+
+    La fila del documento queda bloqueada: una subida o un reintento simultáneos esperan.
+    """
+    with session.begin():
+        repository = DocumentRepository(session, tenant_id)
+        view, _ = repository.get_document(document_id, lock=True)
+        if repository.has_pending_versions(document_id, _PENDING):
+            raise ValueError(document_id)
+        repository.soft_delete(view.document, _now())
+    logger.info("document_deleted", document_id=str(document_id))
 
 
 def process_version(

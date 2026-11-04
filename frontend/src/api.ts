@@ -51,6 +51,11 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await send(path, init);
+  return (await response.json()) as T;
+}
+
+async function send(path: string, init?: RequestInit): Promise<Response> {
   let response: Response;
   try {
     response = await fetch(path, init);
@@ -62,7 +67,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const problem = await readProblem(response);
     throw new ApiError(problem.code, response.status, problem.correlationId ?? correlationId);
   }
-  return (await response.json()) as T;
+  return response;
 }
 
 async function readProblem(
@@ -96,6 +101,11 @@ export function retryDocument(documentId: string): Promise<Version> {
   return request<Version>(`/api/v1/documents/${encodeURIComponent(documentId)}/retry`, {
     method: "POST",
   });
+}
+
+/** Borrado lógico: las citas ya mostradas siguen resolviéndose. Responde 204, sin cuerpo. */
+export async function deleteDocument(documentId: string): Promise<void> {
+  await send(`/api/v1/documents/${encodeURIComponent(documentId)}`, { method: "DELETE" });
 }
 
 export type QueryStatus = "answered" | "no_context" | "degraded";
@@ -150,7 +160,8 @@ export function askQuestion(question: string): Promise<QueryResult> {
   });
 }
 
-export type ChunkDetail = Source & { ordinal: number };
+// `document_deleted`: el documento se borró después de citarse.
+export type ChunkDetail = Source & { ordinal: number; document_deleted: boolean };
 
 export function getChunk(chunkId: string): Promise<ChunkDetail> {
   return request<ChunkDetail>(`/api/v1/chunks/${encodeURIComponent(chunkId)}`);

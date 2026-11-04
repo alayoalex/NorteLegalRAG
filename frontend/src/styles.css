@@ -94,6 +94,17 @@ button {
   cursor: pointer;
 }
 
+button.button--secondary {
+  background: none;
+  color: var(--accent);
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 button:disabled {
   opacity: 0.6;
   cursor: default;

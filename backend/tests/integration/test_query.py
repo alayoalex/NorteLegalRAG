@@ -181,6 +181,23 @@ def test_only_the_current_version_is_retrieved(tenant_client: TestClient) -> Non
     assert "1,500 euros" in body["citations"][0]["quote"]
 
 
+def test_a_deleted_document_is_not_retrieved_but_its_citations_still_resolve(
+    tenant_client: TestClient,
+) -> None:
+    document_id = _ingest(tenant_client, "lease.txt", LEASE)
+    question = "Can either party terminate the lease with written notice?"
+    (citation,) = _ask(tenant_client, question)["citations"]
+
+    assert tenant_client.delete(f"/api/v1/documents/{document_id}").status_code == 204
+
+    body = _ask(tenant_client, question)
+    assert (body["status"], body["reason"]) == ("no_context", "no_sources")
+    cited = tenant_client.get(f"/api/v1/chunks/{citation['chunk_id']}").json()
+    assert cited["document_deleted"] is True
+    assert cited["is_current"] is False
+    assert citation["quote"] in cited["text"]
+
+
 def test_other_tenants_documents_are_never_retrieved(
     app: FastAPI, tenant_client: TestClient
 ) -> None:

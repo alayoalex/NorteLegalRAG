@@ -41,6 +41,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   // Reintento
   not_retryable: "Este documento ya no está en error.",
   document_not_found: "El documento ya no existe.",
+  // Borrado
+  document_processing: "El documento se está procesando. Espera a que termine para eliminarlo.",
 };
 
 const NO_CONTEXT_MESSAGES: Record<string, string> = {

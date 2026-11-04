@@ -242,6 +242,69 @@ def test_unprocessable_document_fails_visibly_and_can_be_retried(
     assert conflict.json()["code"] == "not_retryable"
 
 
+def test_a_deleted_document_disappears_but_keeps_its_versions_and_chunks(
+    client: TestClient,
+) -> None:
+    upload = _upload(client, "contract.txt", CONTRACT_V1)
+    version_id = upload["version"]["id"]
+    _process(version_id)
+    document_url = f"/api/v1/documents/{upload['document_id']}"
+
+    assert client.delete(document_url).status_code == 204
+
+    assert client.get("/api/v1/documents").json()["items"] == []
+    assert client.get(document_url).json()["code"] == "document_not_found"
+    assert client.post(f"{document_url}/retry").json()["code"] == "document_not_found"
+    assert client.delete(document_url).status_code == 404
+    assert _version(version_id).status == "ready"
+    chunks = _chunks(version_id)
+    assert chunks and not any(chunk.is_current for chunk in chunks)
+
+
+def test_a_failed_upload_can_be_deleted(client: TestClient) -> None:
+    upload = _upload(client, "scanned.pdf", make_pdf([""]))
+    assert _process(upload["version"]["id"]) == "failed"
+
+    assert client.delete(f"/api/v1/documents/{upload['document_id']}").status_code == 204
+    assert client.get("/api/v1/documents").json()["items"] == []
+
+
+def test_a_document_cannot_be_deleted_while_it_is_processed(client: TestClient) -> None:
+    upload = _upload(client, "contract.txt", CONTRACT_V1)
+    document_url = f"/api/v1/documents/{upload['document_id']}"
+
+    conflict = client.delete(document_url)
+
+    assert conflict.status_code == 409
+    assert conflict.json()["code"] == "document_processing"
+    _process(upload["version"]["id"])
+    assert client.delete(document_url).status_code == 204
+
+
+def test_uploading_a_deleted_document_again_restores_it(client: TestClient) -> None:
+    upload = _upload(client, "contract.txt", CONTRACT_V1)
+    version_id = upload["version"]["id"]
+    _process(version_id)
+    client.delete(f"/api/v1/documents/{upload['document_id']}")
+
+    again = _upload(client, "contract.txt", CONTRACT_V1)
+
+    assert again["created"] is False
+    assert again["document_id"] == upload["document_id"]
+    assert again["version"]["id"] == version_id and again["version"]["is_current"] is True
+    (document,) = client.get("/api/v1/documents").json()["items"]
+    assert document["current_version"]["id"] == version_id
+    assert all(chunk.is_current for chunk in _chunks(version_id))
+
+    client.delete(f"/api/v1/documents/{upload['document_id']}")
+    changed = _upload(client, "contract.txt", CONTRACT_V2)
+    assert changed["created"] is True and changed["version"]["version_no"] == 2
+    _process(changed["version"]["id"])
+    (document,) = client.get("/api/v1/documents").json()["items"]
+    assert document["current_version"]["id"] == changed["version"]["id"]
+    assert not any(chunk.is_current for chunk in _chunks(version_id))
+
+
 def test_reconciler_requeues_expired_work_and_fails_exhausted_versions(client: TestClient) -> None:
     lost = _upload(client, "lost.txt", CONTRACT_V1)["version"]["id"]
     exhausted = _upload(client, "poison.txt", CONTRACT_V2)["version"]["id"]
