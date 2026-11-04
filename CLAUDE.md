@@ -159,7 +159,7 @@ instrumentado. Detalle en `docs/architecture.md`.
 | M3 | Consulta: búsqueda híbrida (HNSW + FTS + RRF), constructor de prompt, validación de citas, adaptadores OpenRouter, degradación ante fallos, pantalla de preguntas | hecho |
 | M4 | Observabilidad (métricas de ingesta y recuperación), pulido de errores, mitigación de inyección con documento canario | hecho |
 | M5 | Dataset, preguntas de evaluación, script de métricas, resultados en DECISIONS.md, README final | hecho |
-| M6 | Verificación desde un clon limpio, CI en verde, congelación. **Dejar al menos 6 h de margen antes del plazo** | pendiente |
+| M6 | Verificación desde un clon limpio, CI en verde, congelación. **Dejar al menos 6 h de margen antes del plazo** | hecho |
 
 Actualiza esta tabla al cerrar cada hito.
 

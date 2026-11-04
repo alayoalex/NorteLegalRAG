@@ -17,10 +17,39 @@ completo de PostgreSQL, fusionadas con Reciprocal Rank Fusion (k=60).
 ("Section 8.2", "Exhibit B", nombres de partes) que los embeddings recuperan mal. RRF no necesita calibrar escalas
 de puntuación entre búsquedas.
 
-**Cómo se mide:** matriz {900/100, 1 800/200, 3 600/400} × {vectorial, híbrida} sobre las preguntas de `eval/`.
-Métricas: hit@5, MRR@10 y *recall* a nivel de carácter.
+**Cómo se mide:** matriz {900/100, 1 800/200, 3 600/400} × {vectorial, híbrida} sobre las 157 preguntas de
+`eval/`, con `baai/bge-m3` y el LLM simulado (solo cuenta la recuperación). Métricas: hit@1, hit@8 y MRR sobre los
+8 fragmentos que llegan al LLM. Cada variante se construyó desde un *worktree* con las constantes cambiadas. La
+variante vectorial deja la lista léxica vacía antes de la fusión. Ese parche temporal no está en el repositorio.
 
-_Resultados: pendiente (M5)._
+| Fragmento / solapamiento | Modo | hit@1 | hit@8 | MRR | hit@8 `cuad_es` | MRR `lau` |
+|---|---|---|---|---|---|---|
+| 900 / 100 | híbrido | 0.17 | 0.47 | 0.26 | 0.20 | 0.91 |
+| 900 / 100 | vectorial | 0.29 | 0.50 | 0.36 | 0.35 | 0.83 |
+| **1 800 / 200 (actual)** | **híbrido** | 0.22 | 0.54 | 0.32 | 0.35 | 0.59 |
+| 1 800 / 200 | vectorial | 0.28 | 0.70 | 0.40 | 0.65 | 0.56 |
+| 3 600 / 400 | híbrido | 0.22 | 0.72 | 0.36 | 0.45 | 0.54 |
+| 3 600 / 400 | vectorial | 0.31 | 0.79 | 0.45 | 0.85 | 0.55 |
+
+**Resultados:**
+- **La hipótesis híbrida no se confirma en este dataset.** A igual tamaño, la búsqueda solo vectorial gana en las
+  seis comparaciones de hit@1 y MRR, y en hit@8 por 3–16 puntos. La causa probable es la consulta léxica en OR: con
+  las preguntas genéricas de CUAD coincide en términos como *agreement* o *party* con casi todos los contratos. RRF
+  le da el mismo peso que a la vectorial, y un candidato léxico pasa siempre la compuerta de similitud. Entre idiomas
+  la parte léxica solo aporta ruido.
+- **Pero el dataset no tiene las preguntas que justificaban la búsqueda léxica:** referencias exactas ("Section
+  8.2", "Exhibit B", nombres de partes). Solo la LAU, con su vocabulario jurídico literal, mejora con la búsqueda
+  híbrida en fragmentos pequeños (MRR 0.91 frente a 0.83).
+- **Fragmentos mayores, mejor hit@8,** pero en parte por cómo se mide: un fragmento más grande se solapa con el texto
+  de referencia con más facilidad. A cambio, con 3 600 caracteres el LLM recibe el doble de texto (unos 7 000 tokens
+  con 8 fragmentos) y la cita sigue verificándose contra el fragmento entero.
+- **Decisión: se mantiene la búsqueda híbrida con 1 800 / 200 para la entrega.** Cambiarla a dos días del plazo
+  quitaría la búsqueda por términos exactos y el modo léxico de degradación (la consulta sigue funcionando si caen
+  los embeddings) a partir de un dataset que no prueba ninguno de los dos. **Siguiente paso:** añadir a `eval/`
+  preguntas con referencias exactas y probar RRF ponderado (menos peso al canal léxico) o un umbral de `ts_rank`
+  para los candidatos léxicos, frente a la búsqueda solo vectorial.
+- Ejecuciones repetidas de la misma configuración varían hasta ±0.03: los empates de rango se deshacen por el
+  identificador del fragmento (un UUID aleatorio) y HNSW es aproximado.
 
 ## 2. Aislamiento de datos
 
@@ -58,8 +87,27 @@ fragmentos) y en casos dudosos. Se propone un muestreo de respuestas con citas m
 
 ## 5. Trade-offs principales
 
-_Se completa durante la implementación: SDK directo frente a LiteLLM, FastAPI síncrono y volumen compartido frente
-a almacenamiento de objetos. El reconciliador frente a outbox está en la sección 9._
+El reconciliador frente a outbox está en la sección 9.
+
+**SDK oficial detrás de un puerto propio, no LiteLLM.** El dominio solo conoce `LLMProvider.generate_answer` y
+`EmbeddingProvider.embed_*`, contratos con la forma de nuestro problema. LiteLLM añadiría una segunda abstracción
+encima de esa, con cientos de integraciones que no usamos y un historial de incidentes de cadena de suministro en 2026.
+Con OpenRouter ya hay cambio de modelo por configuración, que es lo que LiteLLM aportaría. **Coste:** cada proveedor
+nuevo es un adaptador escrito a mano (unas 150 líneas, con su traducción de errores y sus pruebas).
+
+**FastAPI síncrono (`def`, no `async def`).** Todo lo que hace una petición bloquea: SQLAlchemy con psycopg, el
+SDK de `openai` y el sistema de archivos. Con rutas `def`, FastAPI las ejecuta en su *threadpool* y nada bloquea el
+bucle de eventos. Con `async def` habría que usar variantes asíncronas de todo, o una sola llamada bloqueante
+olvidada congelaría todas las peticiones del proceso. El worker de Celery es síncrono y comparte los mismos servicios
+y repositorios. **Coste:** la concurrencia por proceso la limita el *threadpool* de AnyIO (40 hilos por defecto), y
+una consulta ocupa un hilo hasta 55 s mientras espera al LLM. Para más carga se añaden procesos de uvicorn o
+réplicas, no se reescribe el código.
+
+**Volumen compartido frente a almacenamiento de objetos.** Los archivos originales se guardan en un volumen Docker
+que comparten la API y el worker (`LocalBlobStore`), con el SHA-256 del contenido como clave. Basta para un solo
+servidor y no añade un servicio más (MinIO o S3) que configurar, asegurar y explicar. **Coste:** la API y el worker
+tienen que vivir en la misma máquina. El almacén tiene dos operaciones (`put` y `get`): un adaptador de S3 lo
+sustituiría sin tocar los servicios.
 
 **Embeddings por OpenRouter, no por Voyage directo (M5).** Primero se descartó el SDK `voyageai` (unas 35
 dependencias, entre ellas `langchain-core`, `huggingface-hub` y `aiohttp`: la misma superficie por la que se descartó
@@ -328,5 +376,30 @@ razonamiento medio para 157 preguntas) para medir la inyección con un modelo re
 
 ## 13. Uso de IA generativa
 
-_Se completa al final: qué se generó con IA, qué se reescribió y cómo se verificó (pruebas, lectura línea a línea y
-mediciones)._
+**Herramienta:** Claude Code (Claude Opus 5.5) como programador acompañante durante todos los hitos. Las
+decisiones de arquitectura, los invariantes de `CLAUDE.md` y los criterios de aceptación de cada hito los fijó el
+autor. `CLAUDE.md` es a la vez la guía del repositorio y las instrucciones del agente.
+
+**Qué generó la IA:** la mayor parte del código, las pruebas y la documentación, dentro de los invariantes. Un commit
+por hito, hecho solo cuando el autor lo pedía.
+
+**Cómo se verificó, sin fiarse del código generado:**
+- **Compuertas automáticas en cada cambio:** `ruff`, `mypy --strict` y `pytest`, en local y en CI. Las pruebas de
+  integración usan PostgreSQL y Redis reales (testcontainers), nunca mocks de la base de datos.
+- **Pruebas de propiedades** para el invariante de offsets (`texto[char_start:char_end] == chunk.text`).
+- **Pruebas de los modos de fallo**, no solo del camino feliz: lease perdido, reintentos agotados, proveedor caído o
+  limitado, modelo que filtra el canario, respuesta que nunca termina.
+- **Evaluación de extremo a extremo con proveedores reales** (sección 12) y verificación desde un clon limpio.
+
+**Errores de la IA que se detectaron así** (los cita la entrevista mejor que cualquier acierto):
+- **Spans de SQL ausentes desde M0:** la instrumentación se desactivaba en silencio con SQLAlchemy 2.1. Se vio
+  mirando una traza real en Jaeger, no en las pruebas. Ahora una prueba lo cubre (sección 11).
+- **Sin plazo total en las llamadas a OpenRouter:** el `timeout` de httpx parecía suficiente y no lo era. Lo destapó
+  la evaluación con un modelo lento (sección 8).
+- **Despliegue destructivo:** un `docker compose up` de desarrollo sin `-p` sustituyó los contenedores de producción
+  en el servidor compartido. Se restauró con `scripts/deploy.sh` y ahora el README y `CLAUDE.md` lo advierten.
+- **Una clave expuesta:** al revisar la configuración de un contenedor, el agente imprimió parte de la clave de
+  OpenRouter en su salida. Por eso `CLAUDE.md` prohíbe registrar secretos, y la clave debe rotarse.
+
+_Pendiente del autor: cómo revisó el código generado, qué partes reescribió a mano y por qué, y la confirmación
+de que rotó la clave._
