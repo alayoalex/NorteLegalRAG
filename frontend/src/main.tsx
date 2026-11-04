@@ -2,6 +2,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+// Tipografías servidas desde el propio frontend: ninguna petición a terceros.
+import "@fontsource-variable/literata";
+import "@fontsource-variable/public-sans";
+
 import { App } from "./App";
 import "./styles.css";
 

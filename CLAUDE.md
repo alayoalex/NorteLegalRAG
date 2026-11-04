@@ -33,7 +33,8 @@ backend/                     Python 3.12, uv. Una imagen para api, worker y migr
 frontend/                    React + Vite + TypeScript + TanStack Query, servido por nginx
   src/api.ts                 Cliente tipado; los tipos reflejan api/schemas.py. Errores por `code`
   src/messages.ts            Textos en español para cada estado y cada `code` de la API
-  src/components/            QuestionForm (preguntas y citas), UploadForm, DocumentList
+  src/conversations.ts       Historial de conversaciones en localStorage (el servidor no guarda conversaciones)
+  src/components/            Sidebar (historial), Chat y Answer (preguntas y citas), DocumentsPanel (subida y lista)
 infra/otel/                  Configuración del colector de OpenTelemetry
 docs/architecture.md         Diagramas y flujos (versionado)
 docs/dataset.md              Dataset de evaluación y licencias

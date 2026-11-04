@@ -269,6 +269,18 @@ porque un fragmento puede abarcar varias cláusulas.
 
 Los tres estados devuelven 200: no son errores del cliente, y la interfaz los distingue por `status`.
 
+**Historial de conversaciones: solo en el navegador.** La interfaz tiene un historial de conversaciones al estilo de
+un chat, guardado en `localStorage` (como máximo 50). El servidor no guarda conversaciones y cada pregunta se
+responde por separado: la consulta no recibe las preguntas anteriores. La interfaz lo dice bajo la caja de
+pregunta. Encadenar preguntas exigiría reescribir la consulta con el contexto previo, una llamada más al LLM que
+hay que evaluar aparte. Guardar el historial en el servidor exigiría tablas nuevas, filtradas por tenant, y
+autenticación real para que tenga sentido "mis conversaciones". Las citas guardadas siguen funcionando porque se
+resuelven por `chunk_id` (§3). **Coste:** el historial no pasa de un dispositivo a otro, y el texto de las respuestas
+queda en el navegador. Cada conversación se puede borrar desde la barra lateral.
+
+**Tipografías empaquetadas** (`@fontsource-variable`, Literata y Public Sans) en lugar de Google Fonts: la interfaz
+no hace peticiones a terceros, que verían qué usuario abre la aplicación.
+
 **Presupuesto de tiempo.** 55 s para toda la consulta, por debajo de los 60 s de `proxy_read_timeout`. Cada
 intento del LLM tiene 40 s, y el único reintento solo se hace si cabe entero (incluido `Retry-After`). En la práctica
 se reintentan los fallos rápidos (429, 5xx) y no un timeout. **Coste:** Opus con esfuerzo `medium` puede acercarse
