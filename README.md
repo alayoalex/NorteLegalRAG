@@ -23,6 +23,8 @@ docker compose up --build
 | Interfaz | http://localhost:8080 |
 | API (OpenAPI) | http://localhost:8000/docs |
 | Trazas (Jaeger) | http://localhost:16686 |
+| Panel de métricas (Grafana, usuario `admin` / `admin`) | http://localhost:3000 |
+| Prometheus | http://localhost:9090 |
 | Métricas (endpoint de *scraping* Prometheus, texto plano) | http://localhost:8889/metrics |
 
 Subir un documento (PDF, DOCX o TXT, hasta 25 MiB) y seguir su estado:
@@ -71,19 +73,21 @@ sección, páginas y posición de carácter.
 |---|---|
 | Interfaz | https://nortelegal.mizpa.io |
 | Trazas (Jaeger) | https://nortelegal-traces.mizpa.io (con credenciales) |
+| Panel de métricas (Grafana) | https://nortelegal-grafana.mizpa.io (con credenciales) |
 | Métricas (endpoint de *scraping* Prometheus) | https://nortelegal-metrics.mizpa.io/metrics (con credenciales) |
 
-Las credenciales de trazas y métricas se entregan aparte. La URL de métricas no es un panel: es el texto que publica
-el colector de OpenTelemetry para que lo lea un servidor Prometheus, que no forma parte de la demo (DECISIONS.md §11).
+Las credenciales de trazas, métricas y Grafana se entregan aparte. El panel de Grafana y su fuente de datos se
+aprovisionan desde `infra/grafana/`: no se configuran a mano (DECISIONS.md §11).
 
 ### Cómo se despliega
 
 Un servidor con Docker y un Caddy compartido, que termina TLS y enruta por la red externa `mizpa-network`.
 `docker-compose.prod.yml` se aplica sobre el compose base: no publica puertos en el host, reinicia los contenedores
-y exige `POSTGRES_PASSWORD`. Solo el frontend, el colector y Jaeger entran en la red compartida, con alias propios.
+y exige `POSTGRES_PASSWORD` y `GRAFANA_ADMIN_PASSWORD`. Solo el frontend, el colector, Jaeger y Grafana entran en la
+red compartida, con alias propios. Prometheus queda en la red interna: solo lo lee Grafana.
 
 ```bash
-cp .env.example .env            # y cambia POSTGRES_PASSWORD
+cp .env.example .env            # y cambia POSTGRES_PASSWORD y GRAFANA_ADMIN_PASSWORD
 ./scripts/deploy.sh             # construye, espera a que todo esté sano y comprueba los dominios públicos
 ```
 

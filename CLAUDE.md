@@ -36,6 +36,8 @@ frontend/                    React + Vite + TypeScript + TanStack Query, servido
   src/conversations.ts       Historial de conversaciones en localStorage (el servidor no guarda conversaciones)
   src/components/            Sidebar (historial), Chat y Answer (preguntas y citas), DocumentsPanel (subida y lista)
 infra/otel/                  Configuración del colector de OpenTelemetry
+infra/prometheus/            Prometheus: un solo job que lee el colector (:8889)
+infra/grafana/               Fuente de datos y panel aprovisionados (el JSON del panel se edita en el repo, no en la UI)
 docs/architecture.md         Diagramas y flujos (versionado)
 docs/dataset.md              Dataset de evaluación y licencias
 data/samples/                Documentos de ejemplo versionados (pequeños, con licencia compatible). Incluye el canario
@@ -49,7 +51,7 @@ scripts/deploy.sh            Despliegue en el servidor detrás del Caddy compart
 ```bash
 docker compose -p norte-legal-dev up --build  # Todo el stack, sin claves (proveedores simulados)
 # ¡Ojo! En el servidor, `docker compose up` sin -p sustituye los contenedores de PRODUCCIÓN (mismo proyecto).
-# UI http://localhost:8080 · API http://localhost:8000/docs · Jaeger http://localhost:16686 · métricas :8889/metrics
+# UI http://localhost:8080 · API http://localhost:8000/docs · Jaeger http://localhost:16686 · Grafana http://localhost:3000 · Prometheus :9090 · métricas :8889/metrics
 
 cd backend
 uv sync                                       # Instala dependencias, incluidas las de desarrollo
@@ -161,6 +163,7 @@ instrumentado. Detalle en `docs/architecture.md`.
 | M4 | Observabilidad (métricas de ingesta y recuperación), pulido de errores, mitigación de inyección con documento canario | hecho |
 | M5 | Dataset, preguntas de evaluación, script de métricas, resultados en DECISIONS.md, README final | hecho |
 | M6 | Verificación desde un clon limpio, CI en verde, congelación. **Dejar al menos 6 h de margen antes del plazo** | hecho |
+| M7 | Prometheus y Grafana con panel versionado; corrección de buckets, `service.instance.id` y gauge de la cola (posterior a la entrega, rama `feat/grafana`) | en curso |
 
 Actualiza esta tabla al cerrar cada hito.
 

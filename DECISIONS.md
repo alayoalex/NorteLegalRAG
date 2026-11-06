@@ -307,12 +307,39 @@ en la traza de la petición.
 versión, similitud del mejor candidato (para calibrar el umbral en M5), citas descartadas y fugas del canario. La cola
 la publica el reconciliador. Redis no la sabe y, por el invariante 1, tampoco es la fuente de verdad.
 
-**Sin panel de métricas.** El colector publica las métricas en `:8889/metrics` (en la demo,
-`nortelegal-metrics.mizpa.io/metrics`) en el formato de exposición de Prometheus: es el texto que lee un servidor
-Prometheus, no un panel. No se incluye ni Prometheus ni Grafana. Serían dos servicios más que configurar, proteger y
-mantener en una demo de un solo servidor. Las trazas sí tienen interfaz (Jaeger). Para un panel basta con apuntar un
-Prometheus existente a ese endpoint, sin tocar las aplicaciones. Las consultas de ejemplo están en
-`docs/architecture.md`.
+**Panel de métricas: Prometheus y Grafana.** Hasta M6 el stack solo publicaba el endpoint de *scraping*
+(`:8889/metrics`) y no incluía Prometheus ni Grafana: eran dos servicios más que configurar y proteger, y bastaba con
+apuntar un Prometheus existente a ese endpoint. Se añadieron después de la entrega porque las métricas que no se miran
+no se validan. Al montar el panel salieron cuatro fallos que el endpoint en texto plano no dejaba ver:
+
+1. **Series pisadas.** Cada hijo prefork del worker exporta sus contadores acumulados con el mismo
+   `service.name` y sin `service.instance.id`. En Prometheus eran una sola serie que saltaba entre los valores de
+   cada hijo. Ahora cada proceso se identifica con `hostname-pid` (etiqueta `instance`) y los paneles agregan por
+   encima de ella. Prometheus usa `honor_labels`: si no, cambiaría `job` e `instance` por los del colector.
+2. **Buckets inútiles.** Los buckets por defecto del SDK (0, 5, 10, 25...) metían la recuperación (milisegundos) y la
+   similitud (0 a 1) en el primer bucket. Cualquier p95 era una interpolación sin sentido. Cada histograma declara
+   sus buckets donde se crea (`explicit_bucket_boundaries_advisory`). El LLM tiene un límite exacto en 55 s
+   (`QUERY_BUDGET_S`) y la similitud va en pasos de 0.05, la resolución con la que se ajusta el umbral.
+3. **Cola congelada.** Un gauge síncrono con temporalidad acumulada se reexporta siempre con su último valor.
+   `ingestion.backlog` lo fija el reconciliador en el hijo que toque, así que un hijo que hizo una pasada hace una
+   hora seguiría publicando la cola de entonces. Se exporta en delta (una vez por pasada) y el colector caduca las
+   series que no se actualizan en 90 s, más que el intervalo del reconciliador (60 s). Una cola sin datos significa
+   que el reconciliador no corre, que es lo honesto.
+4. **El primer incremento no contaba.** Un contador de OpenTelemetry no existe hasta su primer `add`, así que su
+   serie nace en Prometheus valiendo 1, sin muestra previa, e `increase()` da 0: tras cada despliegue, la primera
+   pregunta (o el primer 429) no aparecía en el panel. Al arrancar cada proceso, después de `configure_telemetry`,
+   los contadores se publican en 0 con sus combinaciones de etiquetas conocidas (`initialize_metrics`). Los
+   histogramas no se pueden inicializar así; pierden la primera observación de cada proceso, que en un percentil no
+   se nota. **Descartado:** la ingesta de *created timestamps* de Prometheus 3, que exige OpenMetrics en el colector
+   y *scrape* en protobuf, y es una función experimental.
+
+Todo es configuración versionada: `infra/prometheus/prometheus.yml` (un solo *job* contra el colector, 15 días de
+retención) y, en `infra/grafana/`, la fuente de datos con `uid` fijo y el panel en JSON, que no se edita desde la
+interfaz. Las aplicaciones no cambian de destino: siguen hablando solo con el colector. Prometheus no se publica en
+producción, solo lo lee Grafana. Grafana entra en la red compartida con alias propio (`nortelegal-grafana`) y
+usa su propio inicio de sesión, con una contraseña obligatoria en `.env`. **Descartado:** el receptor OTLP nativo de
+Prometheus 3. Eliminaría el *scrape*, pero el endpoint ya existía, estaba protegido y documentado. **Sin**
+Alertmanager ni reglas de alerta: ningún requisito pide avisar a nadie.
 
 **Errores.** Todo error HTTP es `problem+json` con un `code` estable y el `correlation_id` de la petición, incluidos un
 500 inesperado (`internal_error`) y una base de datos caída (503 `database_unavailable`). Los manejadores registran

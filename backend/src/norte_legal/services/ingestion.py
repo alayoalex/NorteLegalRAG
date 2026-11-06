@@ -43,9 +43,16 @@ from norte_legal.domain.ports import EMBEDDING_DIMENSION, EmbeddingProvider
 logger = structlog.get_logger(__name__)
 _meter = metrics.get_meter("norte_legal.ingestion")
 _duration = _meter.create_histogram(
-    "ingestion.duration", unit="s", description="Duración de un intento de ingesta, por resultado"
+    "ingestion.duration",
+    unit="s",
+    description="Duración de un intento de ingesta, por resultado",
+    explicit_bucket_boundaries_advisory=[0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600],
 )
-_chunks = _meter.create_histogram("ingestion.chunks", description="Fragmentos por versión lista")
+_chunks = _meter.create_histogram(
+    "ingestion.chunks",
+    description="Fragmentos por versión lista",
+    explicit_bucket_boundaries_advisory=[1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500],
+)
 # Lo actualiza el reconciliador en cada pasada: la cola real está en PostgreSQL, no en Redis.
 _backlog = _meter.create_gauge(
     "ingestion.backlog", description="Versiones pendientes, por estado (todos los tenants)"

@@ -7,6 +7,7 @@ from opentelemetry.instrumentation.celery import CeleryInstrumentor
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
+from norte_legal.adapters import traced
 from norte_legal.api import documents, query
 from norte_legal.api.problems import install_problem_handlers
 from norte_legal.api.routes import router
@@ -14,6 +15,7 @@ from norte_legal.config import get_settings
 from norte_legal.db.session import get_engine
 from norte_legal.observability.logging import configure_logging
 from norte_legal.observability.telemetry import configure_telemetry, current_trace_id
+from norte_legal.services.query import initialize_metrics as initialize_query_metrics
 
 SERVICE_NAME = "norte-legal-api"
 
@@ -32,6 +34,8 @@ def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(SERVICE_NAME, settings.log_level)
     configure_telemetry(SERVICE_NAME, settings)
+    initialize_query_metrics()
+    traced.initialize_metrics()
 
     app = FastAPI(title="NorteLegal RAG API", version="0.1.0")
     app.middleware("http")(_correlation_header)

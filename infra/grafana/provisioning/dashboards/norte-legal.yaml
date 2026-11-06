@@ -1,0 +1,9 @@
+# El panel vive en el repositorio. Los cambios hechos en la interfaz no se guardan: se editan en el JSON.
+apiVersion: 1
+providers:
+  - name: norte-legal
+    folder: NorteLegal
+    type: file
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

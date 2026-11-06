@@ -47,6 +47,22 @@ services:
       mizpa-network:
         aliases: [nortelegal-jaeger]
 
+  # Solo lo lee Grafana: no entra en la red compartida.
+  prometheus:
+    <<: *restart
+    ports: !reset []
+
+  grafana:
+    <<: *restart
+    ports: !reset []
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Define GRAFANA_ADMIN_PASSWORD en .env}
+      GF_SERVER_ROOT_URL: https://nortelegal-grafana.mizpa.io
+    networks:
+      default:
+      mizpa-network:
+        aliases: [nortelegal-grafana]
+
 networks:
   mizpa-network:
     external: true

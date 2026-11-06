@@ -41,12 +41,17 @@ logger = structlog.get_logger(__name__)
 _tracer = trace.get_tracer("norte_legal.query")
 _meter = metrics.get_meter("norte_legal.query")
 _retrieval_duration = _meter.create_histogram(
-    "retrieval.duration", unit="s", description="Duración de la recuperación, por modo"
+    "retrieval.duration",
+    unit="s",
+    description="Duración de la recuperación, por modo",
+    explicit_bucket_boundaries_advisory=[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5],
 )
 _answers = _meter.create_counter("rag.answers", description="Respuestas, por estado y motivo")
 _top_similarity = _meter.create_histogram(
     "retrieval.top_similarity",
     description="Similitud coseno del mejor candidato vectorial. Sirve para calibrar el umbral",
+    # Pasos de 0.05: la resolución con la que se ajusta RETRIEVAL_MIN_SIMILARITY.
+    explicit_bucket_boundaries_advisory=[round(0.05 * i, 2) for i in range(1, 20)],
 )
 _citations_dropped = _meter.create_counter(
     "rag.citations.dropped", description="Citas del LLM descartadas por no verificarse"
@@ -68,6 +73,27 @@ Reason = Literal[
     "prompt_leak",
 ]
 RetrievalMode = Literal["hybrid", "lexical"]
+
+# Combinaciones que emite answer_question. Una serie que nace con valor 1 no tiene muestra previa
+# en Prometheus e `increase()` no ve ese primer incremento: por eso se publican en 0 al arrancar.
+_ANSWER_SERIES: tuple[tuple[Status, Reason | Literal["none"]], ...] = (
+    ("answered", "none"),
+    ("no_context", "no_sources"),
+    ("no_context", "model_insufficient_context"),
+    ("no_context", "unverified_citations"),
+    ("no_context", "prompt_leak"),
+    ("degraded", "llm_unavailable"),
+    ("degraded", "llm_error"),
+)
+
+
+def initialize_metrics() -> None:
+    """Publica los contadores de la consulta en 0. Va después de `configure_telemetry`: antes,
+    los instrumentos son proxies sin proveedor y el `add(0)` se pierde."""
+    for status, reason in _ANSWER_SERIES:
+        _answers.add(0, {"status": status, "reason": reason})
+    _citations_dropped.add(0)
+    _prompt_leaks.add(0)
 
 
 @dataclass(frozen=True)

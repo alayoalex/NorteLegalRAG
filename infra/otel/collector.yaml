@@ -16,6 +16,9 @@ exporters:
       insecure: true
   prometheus:
     endpoint: 0.0.0.0:8889
+    # Más que el intervalo del reconciliador (60 s): `ingestion.backlog` llega en delta, una vez por pasada.
+    # Las series acumuladas se reexportan cada 15 s y no caducan; solo las de procesos que ya no existen.
+    metric_expiration: 90s
   debug:
     verbosity: basic
 

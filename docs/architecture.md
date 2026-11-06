@@ -20,7 +20,9 @@ flowchart LR
     api -. OTLP .-> otel[otel-collector]
     worker -. OTLP .-> otel
     otel --> jaeger[Jaeger UI]
-    otel --> prom[/:8889 Prometheus/]
+    otel --> scrape[/:8889 métricas/]
+    prom[(Prometheus)] -->|scrape 15 s| scrape
+    grafana[Grafana<br/>panel versionado] -->|PromQL| prom
     migrate[migrate<br/>alembic upgrade] -->|una vez| pg
 ```
 
@@ -202,7 +204,9 @@ Métricas (OTLP → colector → endpoint de *scraping* en `:8889`, formato de e
 | `rag.citations.dropped` | contador | citas del LLM que no se verificaron: señal de alucinación |
 | `rag.prompt_leaks` | contador | respuestas descartadas por contener el canario: inyección con éxito |
 
-Consultas de ejemplo para un servidor Prometheus que lea `:8889` (no se incluye en el stack, DECISIONS.md §11):
+Prometheus lee `:8889` cada 15 s y guarda 15 días. Grafana muestra el panel `infra/grafana/dashboards/norte-legal.json`
+(consulta, calibración del umbral, ingesta y proveedores). Cada proceso exporta con su `service.instance.id`, que en
+Prometheus es la etiqueta `instance`, y los paneles agregan por encima de ella. Algunas consultas del panel:
 
 ```promql
 histogram_quantile(0.95, sum by (le) (rate(llm_request_duration_seconds_bucket[5m])))   # p95 del LLM

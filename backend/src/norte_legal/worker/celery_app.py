@@ -7,6 +7,7 @@ from celery.signals import worker_process_init, worker_process_shutdown
 from opentelemetry.instrumentation.celery import CeleryInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
+from norte_legal.adapters import traced
 from norte_legal.config import get_settings
 from norte_legal.db.session import get_engine
 from norte_legal.observability.logging import configure_logging
@@ -55,6 +56,7 @@ celery_app.conf.update(
 def _init_worker_process(**_: Any) -> None:
     configure_logging(SERVICE_NAME, settings.log_level)
     configure_telemetry(SERVICE_NAME, settings)
+    traced.initialize_metrics()  # Errores de embeddings de la ingesta
     CeleryInstrumentor().instrument()  # type: ignore[no-untyped-call]
     # El pool del padre no puede compartirse con el hijo tras el fork.
     get_engine().dispose(close=False)
