@@ -18,6 +18,9 @@ services:
   api:
     <<: *restart
     ports: !reset []
+    environment:
+      # Caddy termina TLS: la cookie de sesión solo viaja por HTTPS.
+      SESSION_COOKIE_SECURE: "true"
 
   worker:
     <<: *restart

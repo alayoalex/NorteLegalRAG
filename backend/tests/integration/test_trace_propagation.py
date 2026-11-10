@@ -13,6 +13,8 @@ from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
+from clients import signed_in_client
+
 pytestmark = pytest.mark.integration
 
 SPAN_TIMEOUT_S = 15
@@ -96,8 +98,9 @@ def test_database_queries_appear_in_the_request_trace(
     app: FastAPI, exporter: InMemorySpanExporter
 ) -> None:
     """Si la instrumentación de SQLAlchemy se desactiva (versión no soportada), esto falla."""
+    client = signed_in_client(app)
     exporter.clear()
-    response = TestClient(app).get("/api/v1/documents")
+    response = client.get("/api/v1/documents")
     correlation_id = response.headers["X-Correlation-ID"]
 
     sql_spans = [

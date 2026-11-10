@@ -4,7 +4,8 @@ Decisiones sobre los puntos abiertos del enunciado, trade-offs y uso de IA gener
 eligió, por qué, qué se sacrificó y cuándo convendría revisarla. Las marcadas como **hipótesis** se confirman o
 corrigen con las mediciones de `eval/` (hito M5).
 
-> Estado: hito M5. Las mediciones están en la sección 12.
+> Estado: hito M8 (cuentas y organizaciones, posterior a la entrega; sección 2). Las mediciones están en la
+> sección 12.
 
 ## 1. Fragmentación y recuperación
 
@@ -51,16 +52,67 @@ variante vectorial deja la lista léxica vacía antes de la fusión. Ese parche 
 - Ejecuciones repetidas de la misma configuración varían hasta ±0.03: los empates de rango se deshacen por el
   identificador del fragmento (un UUID aleatorio) y HNSW es aproximado.
 
-## 2. Aislamiento de datos
+## 2. Aislamiento de datos, cuentas y organizaciones
 
-**Decisión:** modelo multi-tenant de **esquema compartido** con `tenant_id NOT NULL` en todas las tablas. El filtro se
-aplica de forma obligatoria en el repositorio. El tenant sale de una única dependencia de FastAPI (cabecera
-`X-Tenant-ID`, por defecto `default`).
+> Hito M8, posterior a la entrega. Hasta M7 el tenant salía de la cabecera `X-Tenant-ID`, que no era un control de
+> seguridad.
 
-**Qué queda fuera, de forma explícita:** autenticación (la cabecera **no** es un control de seguridad; en producción
-saldría de un JWT), permisos por documento y Row-Level Security de PostgreSQL. RLS es el siguiente paso natural como
-defensa en profundidad. No se incluye en el MVP porque falta verificar su interacción con los índices HNSW: el
-planificador no empuja operadores que no son *leakproof*.
+**Decisión:** modelo multi-tenant de **esquema compartido** con `tenant_id NOT NULL` en todas las tablas de datos. El
+filtro se aplica de forma obligatoria en el repositorio. **El tenant es la organización:** `organizations.id` es el
+`tenant_id` de documentos, versiones y fragmentos (con clave foránea desde `documents`). Un usuario pertenece a una o
+varias organizaciones (`memberships`, rol `owner` o `member`) y todos sus miembros ven, suben y consultan los mismos
+documentos. La sesión fija la organización activa, y de ella sale el tenant en una única dependencia de FastAPI
+(`get_tenant_id`). La cabecera `X-Tenant-ID` se retiró: dejarla como alternativa permitiría saltarse la sesión.
+
+**Por qué organización = tenant y no un propietario por documento.** Un `owner_user_id` en documentos y fragmentos
+obligaría a tocar todas las consultas y añadiría otra condición que se aplica después de recorrer HNSW (§6), para
+llegar al mismo sitio: lo que se comparte en un despacho es su biblioteca de contratos, no documentos sueltos. Con
+organización = tenant, el filtrado, la búsqueda, el worker y el reconciliador no cambiaron.
+
+**Registro abierto.** Registrarse crea el usuario y una organización propia de la que es `owner`. Para compartir, el
+`owner` añade por email a alguien que ya se registró. No hay invitaciones por correo: exigirían un servicio de correo.
+A un `owner` no se le puede expulsar, para que la organización no se quede sin nadie que la administre.
+
+**Sesión: cookie opaca guardada en PostgreSQL, no JWT.** El token es aleatorio (256 bits, `secrets.token_urlsafe`).
+La base de datos guarda solo su SHA-256: un token de 256 bits no se adivina por fuerza bruta, así que no necesita un
+hash lento, y una copia de la base de datos no sirve para suplantar a nadie. La cookie `nl_session` es `HttpOnly`
+(un XSS no puede leerla), `Secure` en producción, `SameSite=Lax` y `Path=/api`, y dura 12 h sin renovarse. Frente a
+un JWT: la SPA y la API comparten origen detrás de nginx, así que la cookie viaja sola; revocar una sesión es borrar
+una fila, y un JWT no se revoca sin una lista de bloqueo; y no hace falta ninguna librería de JWT ni gestionar
+claves de firma. **Coste:** una consulta más por petición para resolver la sesión (por índice único).
+
+**Expulsión inmediata.** `sessions` tiene una clave foránea compuesta hacia `memberships (user_id, organization_id)`
+con `ON DELETE CASCADE`: al expulsar a un miembro, sus sesiones en esa organización desaparecen en la misma
+transacción, sin código de la aplicación. Su siguiente petición recibe 401.
+
+**CSRF: `Origin` debe coincidir con `Host`** en `POST`, `PUT`, `PATCH` y `DELETE`. `SameSite=Lax` no basta: los
+subdominios de `mizpa.io` son el mismo *site*, y otra aplicación del servidor compartido (§7) podría enviar un POST
+con la cookie. Los navegadores siempre mandan `Origin` en esas peticiones; si falta, el cliente no es un navegador
+(curl, `eval/`) y no tiene cookies ajenas que aprovechar. Por eso nginx reenvía `Host $http_host`, con el puerto, y
+el proxy de Vite no usa `changeOrigin`. **Descartado:** tokens CSRF, que exigen estado y un campo en cada formulario.
+
+**Contraseñas.** Argon2id con los parámetros por defecto de `argon2-cffi` (el perfil de RFC 9106 para poca memoria),
+entre 12 y 128 caracteres; el tope evita hacer trabajar a Argon2 con un cuerpo de megas. Si el email no existe se
+verifica contra un hash ficticio, para que la respuesta tarde lo mismo. Email y contraseña erróneos dan el mismo
+`invalid_credentials`.
+
+**Fuerza bruta.** Tras 5 contraseñas erróneas seguidas, la cuenta no admite inicios de sesión durante 15 minutos
+(429 `login_locked`), aunque la contraseña sea correcta. El contador vive en la fila del usuario y se actualiza con un
+solo `UPDATE` atómico; el fallo se guarda antes de responder. **Coste:** quien conozca un email puede bloquear esa
+cuenta 15 minutos. **Descartado:** un límite por IP, que detrás de Caddy y nginx exige confiar en `X-Forwarded-For` y
+configurar los dos proxies, o añadir Redis como estado, que hoy es transporte desechable.
+
+**Qué se sabe de un email.** El registro (`email_taken`), el alta de un miembro (`user_not_found`) y el bloqueo
+revelan si un email tiene cuenta. Se acepta: evitarlo exige confirmar por correo.
+
+**Organizaciones anteriores.** La migración 0004 registra como organizaciones los tenants que ya tenían documentos
+(`default`, `eval-*`). No tienen miembros: `python -m norte_legal.cli add-member` les da dueño desde el servidor.
+
+**Qué queda fuera, de forma explícita:** recuperación de contraseña y verificación del email (las dos necesitan
+correo), SSO u OIDC, permisos por documento, renovación deslizante de la sesión y una limpieza periódica de sesiones
+caducadas (se borran las de un usuario cuando vuelve a iniciar sesión). Row-Level Security de PostgreSQL sigue siendo
+el siguiente paso natural como defensa en profundidad. No se incluye porque falta verificar su interacción con los
+índices HNSW: el planificador no empuja operadores que no son *leakproof*.
 
 ## 3. Documentos reprocesados o actualizados
 
@@ -153,7 +205,7 @@ que el índice parcial es utilizable con el predicado `is_current`.
 
 **Decisión:** un único servidor con Docker Compose detrás de un Caddy que ya existía y se comparte con otros
 proyectos. Es el mismo compose de desarrollo más un *override* (`docker-compose.prod.yml`), sin orquestador. Caddy
-emite los certificados TLS. La interfaz es pública. Trazas y métricas exigen autenticación básica en Caddy porque
+emite los certificados TLS. La interfaz es pública, con registro abierto (§2). Trazas y métricas exigen autenticación básica en Caddy porque
 muestran rutas, tiempos e identificadores internos.
 
 **Problema encontrado:** la red de Caddy es compartida y otro proyecto tiene un servicio llamado `api`. El nginx del
@@ -273,10 +325,12 @@ Los tres estados devuelven 200: no son errores del cliente, y la interfaz los di
 un chat, guardado en `localStorage` (como máximo 50). El servidor no guarda conversaciones y cada pregunta se
 responde por separado: la consulta no recibe las preguntas anteriores. La interfaz lo dice bajo la caja de
 pregunta. Encadenar preguntas exigiría reescribir la consulta con el contexto previo, una llamada más al LLM que
-hay que evaluar aparte. Guardar el historial en el servidor exigiría tablas nuevas, filtradas por tenant, y
-autenticación real para que tenga sentido "mis conversaciones". Las citas guardadas siguen funcionando porque se
-resuelven por `chunk_id` (§3). **Coste:** el historial no pasa de un dispositivo a otro, y el texto de las respuestas
-queda en el navegador. Cada conversación se puede borrar desde la barra lateral.
+hay que evaluar aparte. El historial se guarda con una clave por usuario y organización: en un navegador
+compartido nadie ve el de otro, y las citas de una conversación solo se resuelven en la organización donde se hizo.
+Guardarlo en el servidor exigiría tablas nuevas, filtradas por tenant y por usuario; con cuentas (§2) ya es posible,
+pero ningún requisito lo pide. Las citas guardadas siguen funcionando porque se resuelven por `chunk_id` (§3).
+**Coste:** el historial no pasa de un dispositivo a otro, y el texto de las respuestas queda en el navegador. Cada
+conversación se puede borrar desde la barra lateral.
 
 **Tipografías empaquetadas** (`@fontsource-variable`, Literata y Public Sans) en lugar de Google Fonts: la interfaz
 no hace peticiones a terceros, que verían qué usuario abre la aplicación.
@@ -382,8 +436,8 @@ CUAD que no se encontraban, para medir la recuperación y no los problemas de al
 descartó LegalBench-RAG: su corpus se distribuye por Dropbox y su licencia depende de cada fuente. Sus preguntas
 sobre CUAD equivalen a las nuestras.
 
-**Ejecución:** `eval/run_eval.py` habla solo con la API HTTP, con un tenant por ejecución, y mide el sistema
-completo. Resultados por pregunta en `eval/results/`.
+**Ejecución:** `eval/run_eval.py` habla solo con la API HTTP y mide el sistema completo. Cada ejecución
+registra un usuario con su propia organización (un tenant por ejecución). Resultados por pregunta en `eval/results/`.
 
 **Recuperación** (LLM simulado; un acierto es que algún fragmento devuelto se solape con el texto de referencia):
 
@@ -460,6 +514,11 @@ por hito, hecho solo cuando el autor lo pedía.
   la evaluación con un modelo lento (sección 8).
 - **Despliegue destructivo:** un `docker compose up` de desarrollo sin `-p` sustituyó los contenedores de producción
   en el servidor compartido. Se restauró con `scripts/deploy.sh` y ahora el README y `CLAUDE.md` lo advierten.
+- **Producción caída 15 s en M8:** para parar una API local, el agente usó `pkill -f` con un patrón que también
+  coincidía con el proceso del contenedor de producción (mismo usuario en el servidor). Docker lo reinició solo. Desde
+  entonces los procesos locales se paran por PID, después de comprobar su ruta.
+- **Protección CSRF que rechazaba todo en desarrollo (M8):** las pruebas pasaban, pero el proxy de Vite reescribía
+  `Host` (`changeOrigin`) y nginx quitaba el puerto (`$host`). Lo destapó la prueba en un navegador real, no la suite.
 - **Una clave expuesta:** al revisar la configuración de un contenedor, el agente imprimió parte de la clave de
   OpenRouter en su salida. Por eso `CLAUDE.md` prohíbe registrar secretos, y la clave debe rotarse.
 

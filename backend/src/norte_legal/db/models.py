@@ -11,6 +11,7 @@ from sqlalchemy import (
     Computed,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -37,7 +38,10 @@ class Document(Base):
     __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_documents_tenant_name"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[str] = mapped_column(Text)
+    # Versiones y fragmentos heredan el tenant de su documento: basta con esta clave foránea.
+    tenant_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("organizations.id", name="fk_documents_organization")
+    )
     name: Mapped[str] = mapped_column(Text)
     current_version_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -148,3 +152,76 @@ class Chunk(Base):
     text_tsv: Mapped[str] = mapped_column(
         TSVECTOR, Computed("to_tsvector('simple', text)", persisted=True)
     )
+
+
+class Organization(Base):
+    """El tenant. Su `id` es el `tenant_id` de documentos, versiones y fragmentos."""
+
+    __tablename__ = "organizations"
+    __table_args__ = (
+        CheckConstraint("id ~ '^[a-z0-9][a-z0-9_-]{0,63}$'", name="ck_organizations_id_format"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint("email = lower(email)", name="ck_users_email_lowercase"),
+        UniqueConstraint("email", name="uq_users_email"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(Text)
+    password_hash: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Intentos fallidos seguidos. Al llegar al tope se bloquea el inicio de sesión un rato.
+    failed_logins: Mapped[int] = mapped_column(Integer, server_default="0")
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Membership(Base):
+    """Pertenencia de un usuario a una organización. Los miembros comparten sus documentos."""
+
+    __tablename__ = "memberships"
+    __table_args__ = (
+        CheckConstraint("role IN ('owner', 'member')", name="ck_memberships_role"),
+        Index("ix_memberships_organization", "organization_id"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    organization_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
+    )
+    role: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AuthSession(Base):
+    """Sesión iniciada en una organización. Se guarda el hash del token, nunca el token."""
+
+    __tablename__ = "sessions"
+    __table_args__ = (
+        UniqueConstraint("token_sha256", name="uq_sessions_token_sha256"),
+        # Expulsar a un miembro borra sus sesiones en esa organización.
+        ForeignKeyConstraint(
+            ["user_id", "organization_id"],
+            ["memberships.user_id", "memberships.organization_id"],
+            name="fk_sessions_membership",
+            ondelete="CASCADE",
+        ),
+        Index("ix_sessions_membership", "user_id", "organization_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    token_sha256: Mapped[str] = mapped_column(String(64))
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    organization_id: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

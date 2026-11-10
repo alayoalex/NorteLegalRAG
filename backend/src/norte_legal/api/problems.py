@@ -9,6 +9,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from norte_legal.domain.errors import InvalidDocumentError
 from norte_legal.observability.telemetry import current_trace_id
+from norte_legal.services.auth import AccountError
 
 logger = structlog.get_logger(__name__)
 
@@ -17,6 +18,22 @@ PROBLEM_MEDIA_TYPE = "application/problem+json"
 _INVALID_DOCUMENT_STATUS = {
     "unsupported_media_type": status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
     "unsupported_encoding": status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+}
+
+_ACCOUNT_ERROR_STATUS = {
+    "invalid_email": status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "weak_password": status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "email_taken": status.HTTP_409_CONFLICT,
+    "invalid_credentials": status.HTTP_401_UNAUTHORIZED,
+    "login_locked": status.HTTP_429_TOO_MANY_REQUESTS,
+    "no_organization": status.HTTP_403_FORBIDDEN,
+    # 404 y no 403: no confirma que exista una organización a la que no se pertenece.
+    "organization_not_found": status.HTTP_404_NOT_FOUND,
+    "owner_required": status.HTTP_403_FORBIDDEN,
+    "user_not_found": status.HTTP_404_NOT_FOUND,
+    "already_member": status.HTTP_409_CONFLICT,
+    "member_not_found": status.HTTP_404_NOT_FOUND,
+    "cannot_remove_owner": status.HTTP_409_CONFLICT,
 }
 
 
@@ -52,6 +69,10 @@ def install_problem_handlers(app: FastAPI) -> None:
             error.code, status.HTTP_422_UNPROCESSABLE_CONTENT
         )
         return problem_response(status_code, error.code, "Invalid document", error.message)
+
+    @app.exception_handler(AccountError)
+    def _account(_: Request, error: AccountError) -> JSONResponse:
+        return problem_response(_ACCOUNT_ERROR_STATUS[error.code], error.code, "Account error")
 
     @app.exception_handler(RequestValidationError)
     def _validation(_: Request, error: RequestValidationError) -> JSONResponse:

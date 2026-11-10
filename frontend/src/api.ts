@@ -55,6 +55,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+// Lo fija la aplicación: cualquier 401 `unauthenticated` (sesión caducada, expulsión de la
+// organización) devuelve a la pantalla de acceso, venga de la petición que venga.
+let unauthenticatedHandler: () => void = () => {};
+
+export function onUnauthenticated(handler: () => void): void {
+  unauthenticatedHandler = handler;
+}
+
 async function send(path: string, init?: RequestInit): Promise<Response> {
   let response: Response;
   try {
@@ -65,6 +73,7 @@ async function send(path: string, init?: RequestInit): Promise<Response> {
   if (!response.ok) {
     const correlationId = response.headers.get("X-Correlation-ID");
     const problem = await readProblem(response);
+    if (response.status === 401 && problem.code === "unauthenticated") unauthenticatedHandler();
     throw new ApiError(problem.code, response.status, problem.correlationId ?? correlationId);
   }
   return response;
@@ -165,4 +174,73 @@ export type ChunkDetail = Source & { ordinal: number; document_deleted: boolean 
 
 export function getChunk(chunkId: string): Promise<ChunkDetail> {
   return request<ChunkDetail>(`/api/v1/chunks/${encodeURIComponent(chunkId)}`);
+}
+
+// ---------- Cuentas y organizaciones ----------
+
+export type Role = "owner" | "member";
+
+export type Organization = { id: string; name: string; role: Role };
+
+export type Me = {
+  user_id: string;
+  email: string;
+  organization: Organization;
+  organizations: Organization[];
+};
+
+export type Member = { user_id: string; email: string; role: Role; joined_at: string };
+
+export const ME_QUERY_KEY = ["me"];
+export const MEMBERS_QUERY_KEY = ["members"];
+
+function postJson<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** `null` si no hay sesión. La cookie es `HttpOnly`: solo la API sabe si existe. */
+export async function getMe(): Promise<Me | null> {
+  try {
+    return await request<Me>("/api/v1/auth/me");
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "unauthenticated") return null;
+    throw error;
+  }
+}
+
+export function register(email: string, password: string, organizationName: string): Promise<Me> {
+  return postJson<Me>("/api/v1/auth/register", {
+    email,
+    password,
+    organization_name: organizationName,
+  });
+}
+
+export function login(email: string, password: string): Promise<Me> {
+  return postJson<Me>("/api/v1/auth/login", { email, password });
+}
+
+export async function logout(): Promise<void> {
+  await send("/api/v1/auth/logout", { method: "POST" });
+}
+
+export function switchOrganization(organizationId: string): Promise<Me> {
+  return postJson<Me>("/api/v1/auth/organization", { organization_id: organizationId });
+}
+
+export async function listMembers(): Promise<Member[]> {
+  const body = await request<{ items: Member[] }>("/api/v1/organization/members");
+  return body.items;
+}
+
+export function addMember(email: string): Promise<Member> {
+  return postJson<Member>("/api/v1/organization/members", { email });
+}
+
+export async function removeMember(userId: string): Promise<void> {
+  await send(`/api/v1/organization/members/${encodeURIComponent(userId)}`, { method: "DELETE" });
 }

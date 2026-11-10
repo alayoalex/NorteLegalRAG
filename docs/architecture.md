@@ -6,7 +6,7 @@ Este documento describe **cómo** está construido el sistema. El **porqué** de
 
 ```mermaid
 flowchart LR
-    user([Analista]) -->|HTTP| fe[frontend<br/>nginx + React]
+    user([Analista]) -->|HTTP + cookie de sesión| fe[frontend<br/>nginx + React]
     fe -->|/api proxy| api[api<br/>FastAPI]
     api -->|SQL| pg[(PostgreSQL 17<br/>+ pgvector)]
     api -->|publica version_id| redis[(Redis<br/>broker)]
@@ -37,7 +37,7 @@ flowchart TB
         tasks[worker/ tareas Celery]
     end
     subgraph nucleo [Núcleo]
-        services[services/<br/>ingesta · consulta]
+        services[services/<br/>ingesta · consulta · cuentas]
         domain[domain/<br/>fragmentación · prompts · validación de citas<br/>puertos · errores]
     end
     subgraph salida [Adaptadores de salida]
@@ -60,12 +60,40 @@ Las dependencias apuntan hacia el núcleo. `domain/` no importa FastAPI, Celery,
 
 ```mermaid
 erDiagram
+    organizations ||--o{ memberships : tiene
+    users ||--o{ memberships : pertenece
+    memberships ||--o{ sessions : "abre (ON DELETE CASCADE)"
+    organizations ||--o{ documents : "tenant_id"
     documents ||--o{ document_versions : tiene
     documents |o--o| document_versions : "current_version_id"
     document_versions ||--o{ chunks : contiene
+    organizations {
+        text id PK "es el tenant_id"
+        text name
+    }
+    users {
+        uuid id PK
+        text email "único, en minúsculas"
+        text password_hash "Argon2id"
+        int failed_logins
+        timestamptz locked_until
+        timestamptz disabled_at
+    }
+    memberships {
+        uuid user_id PK
+        text organization_id PK
+        text role "owner|member"
+    }
+    sessions {
+        uuid id PK
+        char64 token_sha256 "nunca el token"
+        uuid user_id FK
+        text organization_id FK "organización activa"
+        timestamptz expires_at
+    }
     documents {
         uuid id PK
-        text tenant_id
+        text tenant_id FK
         text name "único por tenant"
         uuid current_version_id FK
         timestamptz deleted_at "borrado lógico"
@@ -178,6 +206,31 @@ sequenceDiagram
     end
 ```
 
+## Petición autenticada
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI
+    participant API
+    participant PG as PostgreSQL
+    UI->>API: POST /api/v1/auth/login {email, password}
+    API->>PG: usuario activo, no bloqueado → Argon2id
+    API-->>UI: 200 {user, organization, organizations} + Set-Cookie nl_session (HttpOnly, Path=/api)
+    UI->>API: GET /api/v1/documents (cookie)
+    API->>API: Origin == Host si es POST/PUT/PATCH/DELETE (CSRF)
+    API->>PG: sesión por SHA-256 del token ⋈ users ⋈ memberships → organización activa
+    alt sin sesión, caducada, usuario desactivado o expulsado
+        API-->>UI: 401 unauthenticated → pantalla de acceso
+    else sesión válida
+        API->>PG: consulta filtrada por tenant_id = organización activa
+        API-->>UI: 200
+    end
+```
+
+El tenant sale solo de `get_tenant_id`, que depende de la sesión. El worker y el reconciliador no tocan sesiones:
+la versión que toman ya lleva su `tenant_id`.
+
 ## Trazabilidad
 
 Una petición produce **una sola traza**: `HTTP POST` → `apply_async/ingest` → `run/ingest` → `embeddings.*` y
@@ -186,7 +239,8 @@ Una petición produce **una sola traza**: `HTTP POST` → `apply_async/ingest` �
 instrumentación de SQLAlchemy se desactiva sin error cuando la versión instalada no está soportada. Celery transporta el contexto W3C en las
 cabeceras del mensaje. El `trace_id` es también el `correlation_id` de los logs, se devuelve en la cabecera
 `X-Correlation-ID` y se guarda en `document_versions.trace_id`. Con ese único identificador se encuentran los logs y
-la traza de cualquier documento.
+la traza de cualquier documento. El span de la petición lleva `enduser.id` y la organización activa: identificadores,
+nunca el email.
 
 Métricas (OTLP → colector → endpoint de *scraping* en `:8889`, formato de exposición de Prometheus):
 

@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     # Por debajo del `client_max_body_size` de nginx (26 MiB), para que el error lo dé la API.
     max_upload_bytes: int = 25 * 1024 * 1024
 
+    # Duración fija: no se renueva con el uso. Al caducar, se vuelve a iniciar sesión.
+    session_ttl_hours: int = 12
+    # Solo `false` en desarrollo sobre HTTP. En producción Caddy termina TLS.
+    session_cookie_secure: bool = True
+
     otel_enabled: bool = True
     otel_exporter_otlp_endpoint: str = "http://localhost:4318"
     log_level: str = "INFO"

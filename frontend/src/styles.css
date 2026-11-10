@@ -782,6 +782,235 @@ mark {
   }
 }
 
+/* ---------- Acceso ---------- */
+
+.auth {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 1.5rem 1rem;
+}
+
+.auth-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: min(24rem, 100%);
+  padding: 2rem 1.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(31 42 39 / 6%), 0 12px 32px -12px rgb(31 42 39 / 22%);
+}
+
+.auth-lead {
+  font-family: var(--serif);
+  font-size: 1.0625rem;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.auth-tab {
+  flex: 1;
+  padding: 0.4375rem 0.5rem;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.auth-tab--active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgb(31 42 39 / 12%);
+}
+
+.auth-form,
+.member-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.field input {
+  padding: 0.5625rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 400;
+  font-size: 1rem;
+}
+
+.field input:focus {
+  border-color: var(--pine);
+  outline: none;
+}
+
+.field-hint {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+.primary-button {
+  padding: 0.625rem 0.875rem;
+  border: none;
+  border-radius: 10px;
+  background: var(--pine);
+  color: var(--paper);
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+/* ---------- Cuenta, al pie del historial ---------- */
+
+.account {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem 0.5rem 0;
+  border-top: 1px solid var(--rule);
+}
+
+.account-organization {
+  font-weight: 700;
+  font-size: 0.9375rem;
+}
+
+.account-organization select {
+  width: 100%;
+  padding: 0.25rem 0.375rem;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+.account-email {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.375rem;
+}
+
+.account-actions .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  text-decoration: none;
+}
+
+.account-actions .icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* ---------- Diálogo de miembros ---------- */
+
+.dialog {
+  width: min(30rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  padding: 1.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.dialog::backdrop {
+  background: rgb(15 20 18 / 40%);
+}
+
+.dialog > * + * {
+  margin-top: 1rem;
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.dialog-header h2 {
+  font-size: 1.0625rem;
+}
+
+.member-form {
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+.member-form .field {
+  flex: 1;
+}
+
+.member-form .primary-button {
+  margin-top: 1.625rem;
+}
+
+.member-list {
+  padding: 0;
+  list-style: none;
+}
+
+.member {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.75rem;
+  border-top: 1px solid var(--rule);
+}
+
+.member-email {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9375rem;
+}
+
+@media (max-width: 480px) {
+  .member-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .member-form .primary-button {
+    margin-top: 0;
+  }
+}
+
 /* ---------- Pantallas estrechas: paneles como cajones ---------- */
 
 @media (max-width: 1100px) {

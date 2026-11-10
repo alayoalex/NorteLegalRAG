@@ -21,20 +21,24 @@ backend/                     Python 3.12, uv. Una imagen para api, worker y migr
   src/norte_legal/
     api/                     FastAPI: rutas, esquemas Pydantic, dependencias
     worker/                  Aplicación Celery y tareas
-    services/                Casos de uso: registro de subidas, procesamiento de una versión, reconciliador
+    services/                Casos de uso: registro de subidas, procesamiento de una versión, reconciliador, cuentas
+                             (registro, sesiones, miembros)
     domain/                  Puertos (interfaces), errores, lógica pura (validación de archivos, extracción,
                              fragmentación, prompts)
     adapters/                Implementaciones de los puertos: fake, openrouter (LLM y embeddings), traced (OTel)
-    db/                      Modelos SQLAlchemy y sesión
+    db/                      Modelos SQLAlchemy, sesión y repositorios (`accounts.py`: identidad, sin tenant)
+    cli.py                   Administración desde el servidor (`add-member`)
     observability/           OpenTelemetry y logging estructurado
   migrations/                Alembic. Migraciones versionadas
   tests/unit, tests/integration
   tests/factories.py         PDF, DOCX y ZIP generados en memoria para las pruebas
+  tests/clients.py           TestClient con una cuenta y organización nuevas (`signed_in_client`)
 frontend/                    React + Vite + TypeScript + TanStack Query, servido por nginx
   src/api.ts                 Cliente tipado; los tipos reflejan api/schemas.py. Errores por `code`
   src/messages.ts            Textos en español para cada estado y cada `code` de la API
-  src/conversations.ts       Historial de conversaciones en localStorage (el servidor no guarda conversaciones)
-  src/components/            Sidebar (historial), Chat y Answer (preguntas y citas), DocumentsPanel (subida y lista)
+  src/conversations.ts       Historial en localStorage, una clave por usuario y organización (el servidor no lo guarda)
+  src/components/            AuthScreen (acceso), Sidebar (historial) con Account y MembersDialog, Chat y Answer
+                             (preguntas y citas), DocumentsPanel (subida y lista)
 infra/otel/                  Configuración del colector de OpenTelemetry
 infra/prometheus/            Prometheus: un solo job que lee el colector (:8889)
 infra/grafana/               Fuente de datos y panel aprovisionados (el JSON del panel se edita en el repo, no en la UI)
@@ -59,6 +63,7 @@ uv run pytest tests/unit                      # Rápidas, sin Docker
 uv run pytest                                 # Todas: las de integración levantan contenedores (testcontainers)
 uv run ruff check . && uv run ruff format --check . && uv run mypy
 uv run alembic revision -m "descripcion"      # Nueva migración (escrita a mano, ver reglas)
+docker compose exec api python -m norte_legal.cli add-member --organization default --email ana@x.com --role owner
 
 cd frontend && npm ci && npm run dev          # Vite en :5173, proxy a la API en :8000
 
@@ -92,9 +97,12 @@ instrumentado. Detalle en `docs/architecture.md`.
    `insufficient_context` en el esquema y validación posterior (sin citas válidas no hay respuesta).
 7. **El contenido de los documentos es dato, nunca instrucción.** Va delimitado en el prompt, el LLM no tiene
    herramientas y la salida se renderiza como texto plano en React (sin `dangerouslySetInnerHTML`).
-8. **Toda consulta filtra por `tenant_id`** en el repositorio, sin excepciones. El tenant sale de una única dependencia
-   de FastAPI. Única excepción, documentada: el reconciliador es un proceso de sistema que recorre el estado de
-   ingesta de todos los tenants. El worker filtra por el `tenant_id` de la versión que tomó.
+8. **Toda consulta filtra por `tenant_id`** en el repositorio, sin excepciones. El tenant es la organización activa de
+   la sesión y sale de una única dependencia de FastAPI (`get_tenant_id`); nunca de una cabecera ni del cuerpo.
+   Toda ruta de `/api/v1` exige sesión salvo registro, inicio y cierre de sesión y `system/ping`
+   (`test_every_tenant_route_requires_a_session`). Excepciones documentadas: el reconciliador es un proceso de sistema
+   que recorre el estado de ingesta de todos los tenants, y las tablas de identidad (`users`, `organizations`,
+   `memberships`, `sessions`) no son datos de un tenant. El worker filtra por el `tenant_id` de la versión que tomó.
 9. **Ningún secreto en el repositorio.** Toda la configuración llega por entorno (`config.py`). Sin claves, el sistema
    arranca con proveedores simulados.
 10. **Los adaptadores traducen las excepciones del SDK** a la taxonomía de `domain/errors.py`. Esa taxonomía decide si
@@ -163,13 +171,16 @@ instrumentado. Detalle en `docs/architecture.md`.
 | M4 | Observabilidad (métricas de ingesta y recuperación), pulido de errores, mitigación de inyección con documento canario | hecho |
 | M5 | Dataset, preguntas de evaluación, script de métricas, resultados en DECISIONS.md, README final | hecho |
 | M6 | Verificación desde un clon limpio, CI en verde, congelación. **Dejar al menos 6 h de margen antes del plazo** | hecho |
-| M7 | Prometheus y Grafana con panel versionado; corrección de buckets, `service.instance.id` y gauge de la cola (posterior a la entrega, rama `feat/grafana`) | en curso |
+| M7 | Prometheus y Grafana con panel versionado; corrección de buckets, `service.instance.id` y gauge de la cola (posterior a la entrega) | hecho |
+| M8 | Cuentas y organizaciones: registro abierto, sesión por cookie en PostgreSQL, tenant = organización activa, miembros que comparten documentos, CSRF por `Origin`, bloqueo tras intentos fallidos, pantalla de acceso (posterior a la entrega, rama `feat/cuentas`) | hecho |
 
 Actualiza esta tabla al cerrar cada hito.
 
 ## Qué no hacer
 
 - No versionar `tradeoffs.md`, `.env`, `data/raw/` ni el PDF del enunciado (contiene el enlace privado de entrega).
+- No detener procesos con `pkill -f` en el servidor: el patrón coincide con los procesos de los contenedores de
+  producción. Para por PID, después de comprobar su ruta.
 - No usar pickle en Celery, `dangerouslySetInnerHTML`, f-strings en SQL, LiteLLM ni dependencias sin fijar.
 - No añadir servicios, capas o abstracciones que no exija un requisito. Cada pieza extra es una pregunta más en la
   entrevista.

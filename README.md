@@ -3,9 +3,11 @@
 Asistente de conocimiento para contratos y políticas: ingesta asíncrona de documentos y respuestas con citas
 verificables. Construido con FastAPI, Celery con Redis, PostgreSQL con pgvector, React y OpenTelemetry.
 
-> **Estado:** hito M5. Se suben documentos, un worker los procesa en segundo plano y se hacen preguntas con
+> **Estado:** hito M8. Se suben documentos, un worker los procesa en segundo plano y se hacen preguntas con
 > respuestas citadas y verificadas, con métricas, trazas completas y defensa frente a inyección de prompt. Evaluado
 > con 157 preguntas sobre contratos de CUAD, la LAU y documentos sintéticos (resultados en `DECISIONS.md` §12).
+> Cada persona tiene su cuenta y trabaja dentro de una organización cuyos miembros comparten documentos
+> (`DECISIONS.md` §2).
 
 ## Ejecutar desde cero (sin claves)
 
@@ -27,12 +29,24 @@ docker compose up --build
 | Prometheus | http://localhost:9090 |
 | Métricas (endpoint de *scraping* Prometheus, texto plano) | http://localhost:8889/metrics |
 
+En la interfaz, crea una cuenta: el registro es abierto y crea también tu organización. Por la API, la sesión es
+una cookie (`-c` la guarda y `-b` la envía):
+
+```bash
+curl -c sesion.txt -H 'Content-Type: application/json' http://localhost:8000/api/v1/auth/register \
+  -d '{"email": "ana@example.com", "password": "una clave larga", "organization_name": "Despacho Norte"}'
+```
+
 Subir un documento (PDF, DOCX o TXT, hasta 25 MiB) y seguir su estado:
 
 ```bash
-curl -F "file=@contrato.pdf" http://localhost:8000/api/v1/documents   # 202, status: queued
-curl http://localhost:8000/api/v1/documents                            # latest_version.status: ready
+curl -b sesion.txt -F "file=@contrato.pdf" http://localhost:8000/api/v1/documents   # 202, status: queued
+curl -b sesion.txt http://localhost:8000/api/v1/documents                            # latest_version.status: ready
 ```
+
+Para compartir documentos, quien administra la organización añade a otras personas ya registradas desde
+"Miembros", en la barra lateral (o con `POST /api/v1/organization/members`). Quien pertenece a varias organizaciones
+cambia entre ellas desde el mismo sitio.
 
 Prueba de la traza de extremo a extremo: `curl -X POST http://localhost:8000/api/v1/system/ping`. Busca el
 `correlation_id` de la respuesta en Jaeger.
@@ -60,8 +74,8 @@ documentos.
 Preguntar por la API:
 
 ```bash
-curl -H 'Content-Type: application/json' -d '{"question": "¿Con cuánto preaviso se puede resolver?"}' \
-  http://localhost:8000/api/v1/query
+curl -b sesion.txt -H 'Content-Type: application/json' \
+  -d '{"question": "¿Con cuánto preaviso se puede resolver?"}' http://localhost:8000/api/v1/query
 ```
 
 La respuesta trae `status` (`answered`, `no_context` o `degraded`), la respuesta y sus citas con documento, versión,
@@ -91,6 +105,13 @@ cp .env.example .env            # y cambia POSTGRES_PASSWORD y GRAFANA_ADMIN_PAS
 ./scripts/deploy.sh             # construye, espera a que todo esté sano y comprueba los dominios públicos
 ```
 
+Los documentos subidos antes de las cuentas están en organizaciones sin miembros (`default`, `eval-*`). Para
+recuperarlos, regístrate en la interfaz y date de alta como dueño:
+
+```bash
+docker compose exec api python -m norte_legal.cli add-member --organization default --email <tu email> --role owner
+```
+
 ## Pruebas
 
 ```bash
@@ -103,7 +124,8 @@ uv run pytest                   # con integración (requiere Docker: testcontain
 ## Evaluación
 
 Con el stack en marcha (en local, `docker compose -p norte-legal-dev up`), sube la muestra de `data/samples/` y hace
-las 157 preguntas de `eval/questions.jsonl` por la API, en un tenant propio:
+las 157 preguntas de `eval/questions.jsonl` por la API. Registra un usuario con su propia organización en cada
+ejecución:
 
 ```bash
 cd backend

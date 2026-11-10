@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import type { Conversation } from "../conversations";
 import { Icon, NorthMark } from "./Icon";
 
@@ -7,6 +9,8 @@ type Props = {
   onNew: () => void;
   onSelect: (id: string) => void;
   onRemove: (id: string) => void;
+  // Bloque de la cuenta, al pie de la barra.
+  footer: ReactNode;
 };
 
 const dayFormat = new Intl.DateTimeFormat("es-ES", { day: "numeric", month: "short" });
@@ -18,7 +22,7 @@ function groupLabel(iso: string, now: Date): string {
   return days < 7 ? "Esta semana" : "Anteriores";
 }
 
-export function Sidebar({ conversations, activeId, onNew, onSelect, onRemove }: Props) {
+export function Sidebar({ conversations, activeId, onNew, onSelect, onRemove, footer }: Props) {
   const now = new Date();
   const groups = new Map<string, Conversation[]>();
   for (const conversation of conversations) {
@@ -81,6 +85,7 @@ export function Sidebar({ conversations, activeId, onNew, onSelect, onRemove }: 
         ))
       )}
       <p className="sidebar-note">El historial se guarda solo en este navegador.</p>
+      {footer}
     </nav>
   );
 }

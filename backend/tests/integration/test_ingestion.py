@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 
+from clients import signed_in_client
 from factories import make_pdf
 from norte_legal.adapters.blob_store import LocalBlobStore
 from norte_legal.adapters.fake import FakeEmbeddingProvider
@@ -59,8 +60,8 @@ def published(monkeypatch: pytest.MonkeyPatch) -> list[uuid.UUID]:
 
 @pytest.fixture
 def client(app: FastAPI, published: list[uuid.UUID]) -> TestClient:
-    """Cliente con un tenant propio por prueba: los datos de otras pruebas no interfieren."""
-    return TestClient(app, headers={"X-Tenant-ID": f"t-{uuid.uuid4().hex[:12]}"})
+    """Cliente con una organización propia por prueba: los datos de otras no interfieren."""
+    return signed_in_client(app)
 
 
 def _upload(client: TestClient, name: str, content: bytes | str) -> dict:  # type: ignore[type-arg]
@@ -339,7 +340,7 @@ def test_tenants_cannot_see_each_other(app: FastAPI, client: TestClient) -> None
     _process(upload["version"]["id"])
     chunk = _chunks(upload["version"]["id"])[0]
 
-    other = TestClient(app, headers={"X-Tenant-ID": "other-tenant"})
+    other = signed_in_client(app)
     assert upload["document_id"] not in {
         d["id"] for d in other.get("/api/v1/documents").json()["items"]
     }
@@ -371,11 +372,6 @@ def test_oversized_uploads_are_rejected(
     assert (response.status_code, response.json()["code"]) == (413, "file_too_large")
 
 
-def test_invalid_tenant_is_rejected(app: FastAPI) -> None:
-    response = TestClient(app, headers={"X-Tenant-ID": "../etc"}).get("/api/v1/documents")
-    assert (response.status_code, response.json()["code"]) == (400, "invalid_tenant")
-
-
 @pytest.fixture
 def running_worker(app: FastAPI) -> Iterator[None]:
     from norte_legal.worker.celery_app import celery_app
@@ -388,7 +384,7 @@ def running_worker(app: FastAPI) -> Iterator[None]:
 
 
 def test_upload_is_ingested_by_a_real_worker(app: FastAPI, running_worker: None) -> None:
-    client = TestClient(app, headers={"X-Tenant-ID": "e2e"})
+    client = signed_in_client(app)
     upload = client.post("/api/v1/documents", files={"file": ("e2e.txt", CONTRACT_V1.encode())})
     assert upload.json()["enqueued"] is True
     url = f"/api/v1/documents/{upload.json()['document_id']}"

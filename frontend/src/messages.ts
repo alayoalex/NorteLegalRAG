@@ -16,7 +16,6 @@ const ERROR_MESSAGES: Record<string, string> = {
   server_error: "El servidor no está disponible. Inténtalo de nuevo en unos minutos.",
   internal_error: "Se produjo un error interno. Inténtalo de nuevo; si se repite, avisa a soporte.",
   database_unavailable: "La base de datos no responde. Inténtalo de nuevo en unos minutos.",
-  invalid_tenant: "El espacio de trabajo indicado no es válido.",
   file_too_large: "El archivo supera el tamaño máximo de 25 MB.",
   empty_file: "El archivo está vacío.",
   invalid_file_name: "El nombre del archivo no es válido.",
@@ -41,6 +40,22 @@ const ERROR_MESSAGES: Record<string, string> = {
   // Reintento
   not_retryable: "Este documento ya no está en error.",
   document_not_found: "El documento ya no existe.",
+  // Cuentas
+  unauthenticated: "Tu sesión ha terminado. Vuelve a iniciar sesión.",
+  invalid_credentials: "El email o la contraseña no son correctos.",
+  login_locked:
+    "Demasiados intentos fallidos. Por seguridad, espera 15 minutos antes de volver a intentarlo.",
+  invalid_email: "Escribe un email válido.",
+  weak_password: "La contraseña debe tener entre 12 y 128 caracteres.",
+  email_taken: "Ya existe una cuenta con ese email. Inicia sesión.",
+  no_organization: "Tu cuenta no pertenece a ninguna organización. Pide que te añadan a una.",
+  organization_not_found: "Ya no perteneces a esa organización.",
+  owner_required: "Solo quien administra la organización puede gestionar sus miembros.",
+  user_not_found: "No hay ninguna cuenta con ese email. Esa persona debe registrarse primero.",
+  already_member: "Esa persona ya es miembro de la organización.",
+  member_not_found: "Esa persona ya no es miembro de la organización.",
+  cannot_remove_owner: "No se puede quitar a quien administra la organización.",
+  cross_origin_request: "Petición rechazada por seguridad. Recarga la página.",
   // Borrado
   document_processing: "El documento se está procesando. Espera a que termine para eliminarlo.",
 };

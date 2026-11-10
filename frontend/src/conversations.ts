@@ -20,15 +20,19 @@ export type Conversation = {
   turns: Turn[];
 };
 
-const STORAGE_KEY = "nortelegal.conversations.v1";
+// Una clave por usuario y organización: en un navegador compartido, nadie ve el historial de otro,
+// y las citas de una conversación solo se resuelven en la organización donde se hizo.
+function storageKey(userId: string, organizationId: string): string {
+  return `nortelegal.conversations.v2.${userId}.${organizationId}`;
+}
 // Las respuestas incluyen los fragmentos consultados; el tope mantiene el historial muy por
 // debajo del límite de localStorage (unos 5 MB).
 const MAX_CONVERSATIONS = 50;
 const TITLE_LENGTH = 60;
 
-function load(): Conversation[] {
+function load(key: string): Conversation[] {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     const parsed: unknown = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? (parsed as Conversation[]) : [];
   } catch {
@@ -37,9 +41,9 @@ function load(): Conversation[] {
   }
 }
 
-function save(conversations: Conversation[]): void {
+function save(key: string, conversations: Conversation[]): void {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
+    window.localStorage.setItem(key, JSON.stringify(conversations));
   } catch {
     // Sin almacenamiento la conversación sigue funcionando, solo que no se recuerda.
   }
@@ -54,10 +58,13 @@ export function newId(): string {
   return crypto.randomUUID();
 }
 
-export function useConversations() {
-  const [conversations, setConversations] = useState<Conversation[]>(load);
+/** La clave no cambia durante la vida del componente: la aplicación lo vuelve a montar al cambiar
+ * de usuario o de organización. */
+export function useConversations(userId: string, organizationId: string) {
+  const [key] = useState(() => storageKey(userId, organizationId));
+  const [conversations, setConversations] = useState<Conversation[]>(() => load(key));
 
-  useEffect(() => save(conversations), [conversations]);
+  useEffect(() => save(key, conversations), [key, conversations]);
 
   /** Añade un turno terminado. Crea la conversación si todavía no existe. */
   const addTurn = useCallback((conversationId: string, turn: Turn) => {

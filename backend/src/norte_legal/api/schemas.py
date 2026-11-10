@@ -2,10 +2,11 @@
 
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
+from norte_legal.db.accounts import MemberView, OrganizationView, SessionView
 from norte_legal.db.models import DocumentVersion
 from norte_legal.db.repository import ChunkView, DocumentView
 from norte_legal.db.retrieval import RetrievedChunk
@@ -215,3 +216,78 @@ class QueryOut(BaseModel):
             sources=[SourceOut.build(source) for source in result.sources],
             correlation_id=correlation_id,
         )
+
+
+# La longitud de la contraseña la valida el servicio, para responder con `weak_password`.
+class RegisterIn(BaseModel):
+    email: str
+    password: str
+    organization_name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
+    ]
+
+
+class LoginIn(BaseModel):
+    email: str
+    password: str
+
+
+class SwitchOrganizationIn(BaseModel):
+    organization_id: str
+
+
+class AddMemberIn(BaseModel):
+    email: str
+
+
+OrganizationRole = Literal["owner", "member"]
+
+
+class OrganizationOut(BaseModel):
+    id: str
+    name: str
+    role: OrganizationRole
+
+    @classmethod
+    def build(cls, view: OrganizationView) -> "OrganizationOut":
+        return cls(id=view.id, name=view.name, role=view.role)
+
+
+class MeOut(BaseModel):
+    user_id: uuid.UUID
+    email: str
+    organization: OrganizationOut
+    organizations: list[OrganizationOut]
+
+    @classmethod
+    def build(cls, account: SessionView, organizations: list[OrganizationView]) -> "MeOut":
+        return cls(
+            user_id=account.user_id,
+            email=account.email,
+            organization=OrganizationOut(
+                id=account.organization_id,
+                name=account.organization_name,
+                role=account.role,
+            ),
+            organizations=[OrganizationOut.build(o) for o in organizations],
+        )
+
+
+class MemberOut(BaseModel):
+    user_id: uuid.UUID
+    email: str
+    role: OrganizationRole
+    joined_at: datetime
+
+    @classmethod
+    def build(cls, view: MemberView) -> "MemberOut":
+        return cls(
+            user_id=view.user_id,
+            email=view.email,
+            role=view.role,
+            joined_at=view.joined_at,
+        )
+
+
+class MemberListOut(BaseModel):
+    items: list[MemberOut]

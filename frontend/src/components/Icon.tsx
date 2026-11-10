@@ -8,6 +8,8 @@ const PATHS = {
   history: "M4 6h16M4 12h10M4 18h7",
   documents: "M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6",
   close: "M6 6l12 12M18 6 6 18",
+  logout: "M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10",
+  users: "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21a7 7 0 0 1 14 0M16 3.5a4 4 0 0 1 0 7.5M18 14.5a6 6 0 0 1 4 6.5",
 } as const;
 
 export type IconName = keyof typeof PATHS;

@@ -1,17 +1,104 @@
-import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useState } from "react";
 
-import { ApiError, askQuestion } from "./api";
+import { ApiError, ME_QUERY_KEY, askQuestion, getMe, logout, onUnauthenticated } from "./api";
+import type { Me } from "./api";
+import { Account } from "./components/Account";
+import { AuthScreen } from "./components/AuthScreen";
 import { Chat } from "./components/Chat";
 import { DocumentsPanel, useDocuments } from "./components/DocumentsPanel";
 import { Icon, NorthMark } from "./components/Icon";
 import { Sidebar } from "./components/Sidebar";
 import { newId, useConversations } from "./conversations";
 import type { Turn } from "./conversations";
+import { apiErrorMessage, errorMessage } from "./messages";
 
 type Drawer = "history" | "documents" | null;
 
+/** Decide entre la pantalla de acceso y el espacio de trabajo de la organización activa. */
 export function App() {
-  const { conversations, addTurn, removeConversation } = useConversations();
+  const queryClient = useQueryClient();
+  const me = useQuery({ queryKey: ME_QUERY_KEY, queryFn: getMe, staleTime: Infinity });
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // Al cambiar de usuario o de organización se descarta el resto de la caché: los documentos de
+  // una organización no deben verse ni un instante en otra. `me` se conserva y se actualiza: si se
+  // borrara, esta pantalla seguiría observando la query eliminada.
+  const enter = useCallback(
+    (next: Me | null) => {
+      queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== ME_QUERY_KEY[0] });
+      queryClient.setQueryData(ME_QUERY_KEY, next);
+    },
+    [queryClient],
+  );
+
+  useEffect(
+    () =>
+      onUnauthenticated(() => {
+        // Sin sesión conocida (la comprobación inicial de `getMe`) no hay nada que cerrar.
+        if (!queryClient.getQueryData(ME_QUERY_KEY)) return;
+        setNotice(errorMessage("unauthenticated"));
+        enter(null);
+      }),
+    [queryClient, enter],
+  );
+
+  async function signOut() {
+    try {
+      await logout();
+    } finally {
+      setNotice(null);
+      enter(null);
+    }
+  }
+
+  if (me.isPending) return <main className="auth" aria-busy="true" />;
+  if (me.isError) {
+    return (
+      <main className="auth">
+        <p role="alert" className="alert">
+          {apiErrorMessage(me.error)}{" "}
+          <button type="button" className="text-button" onClick={() => void me.refetch()}>
+            Reintentar
+          </button>
+        </p>
+      </main>
+    );
+  }
+  if (me.data === null) {
+    return (
+      <AuthScreen
+        notice={notice}
+        onSignedIn={(next) => {
+          setNotice(null);
+          enter(next);
+        }}
+      />
+    );
+  }
+  // La clave vuelve a montar el espacio de trabajo, con su propio historial, al cambiar de
+  // usuario o de organización.
+  return (
+    <Workspace
+      key={`${me.data.user_id}:${me.data.organization.id}`}
+      me={me.data}
+      onSwitched={enter}
+      onLogout={() => void signOut()}
+    />
+  );
+}
+
+type WorkspaceProps = {
+  me: Me;
+  onSwitched: (me: Me) => void;
+  onLogout: () => void;
+};
+
+function Workspace({ me, onSwitched, onLogout }: WorkspaceProps) {
+  const { conversations, addTurn, removeConversation } = useConversations(
+    me.user_id,
+    me.organization.id,
+  );
   const [activeId, setActiveId] = useState(newId);
   // Preguntas en curso por conversación. La respuesta se guarda en la conversación donde se hizo
   // la pregunta aunque, mientras tanto, se haya abierto otra.
@@ -90,6 +177,7 @@ export function App() {
           removeConversation(id);
           if (id === activeId) setActiveId(newId());
         }}
+        footer={<Account me={me} onSwitched={onSwitched} onLogout={onLogout} />}
       />
       <main className="main">
         <Chat

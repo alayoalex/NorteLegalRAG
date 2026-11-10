@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from clients import signed_in_client
 from norte_legal.adapters.blob_store import LocalBlobStore
 from norte_legal.adapters.fake import FakeEmbeddingProvider, FakeLLMProvider
 from norte_legal.config import get_settings
@@ -78,7 +79,7 @@ def app(migrated_settings: None) -> FastAPI:
 @pytest.fixture
 def tenant_client(app: FastAPI, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr("norte_legal.api.documents.enqueue_ingestion", lambda _: True)
-    return TestClient(app, headers={"X-Tenant-ID": f"q-{uuid.uuid4().hex[:12]}"})
+    return signed_in_client(app)
 
 
 def _ingest(client: TestClient, name: str, content: str) -> str:
@@ -202,7 +203,7 @@ def test_other_tenants_documents_are_never_retrieved(
     app: FastAPI, tenant_client: TestClient
 ) -> None:
     _ingest(tenant_client, "lease.txt", LEASE)
-    other = TestClient(app, headers={"X-Tenant-ID": f"q-{uuid.uuid4().hex[:12]}"})
+    other = signed_in_client(app)
 
     body = _ask(other, "What is the monthly rent in euros?")
 
@@ -270,7 +271,7 @@ def test_unexpected_errors_are_problem_details_with_a_correlation_id(
         raise RuntimeError("bug")
 
     monkeypatch.setattr("norte_legal.api.query.answer_question", broken)
-    client = TestClient(app, raise_server_exceptions=False)
+    client = signed_in_client(app, raise_server_exceptions=False)
 
     response = client.post("/api/v1/query", json={"question": "¿Plazo de preaviso?"})
 

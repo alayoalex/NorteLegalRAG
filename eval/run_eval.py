@@ -2,7 +2,8 @@
 
     cd backend && EVAL_LLM=fake EVAL_EMBEDDINGS=fake uv run python ../eval/run_eval.py --label fake
 
-Cada ejecución usa un tenant propio (`eval-<label>`), así que no mezcla datos con otros usos. Mide
+Cada ejecución registra un usuario con una organización propia (`eval-<label>`), así que no mezcla
+datos con otros usos. Mide
 el sistema tal y como lo ve un usuario, con los proveedores que tenga configurados la API. La API no
 los expone: `EVAL_LLM` y `EVAL_EMBEDDINGS` solo los anotan en el informe. Escribe
 `eval/results/<label>.json` (detalle por pregunta) y `eval/results/<label>.md` (resumen).
@@ -17,6 +18,7 @@ Métricas (solo las preguntas con respuesta esperada cuentan para la recuperaci�
 import argparse
 import json
 import os
+import secrets
 import statistics
 import time
 from pathlib import Path
@@ -42,11 +44,8 @@ def main() -> None:
         json.loads(line) for line in (ROOT / "eval" / "questions.jsonl").read_text().splitlines()
     ]
     edge_cases: dict[str, str] = json.loads((ROOT / "eval" / "edge_cases.json").read_text())
-    client = httpx2.Client(
-        base_url=args.base_url,
-        headers={"X-Tenant-ID": f"eval-{args.label}"},
-        timeout=QUERY_TIMEOUT_S,
-    )
+    client = httpx2.Client(base_url=args.base_url, timeout=QUERY_TIMEOUT_S)
+    _sign_up(client, args.label)
 
     ingestion = _ingest(client, edge_cases)
     rows = [_ask(client, q) for q in questions[: args.limit]]
@@ -61,6 +60,20 @@ def main() -> None:
     )
     (RESULTS / f"{args.label}.md").write_text(_markdown(summary))
     print(_markdown(summary))
+
+
+def _sign_up(client: httpx2.Client, label: str) -> None:
+    """La cookie de sesión es `Secure` y la API local se sirve por HTTP: se envía a mano."""
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": f"eval-{label}-{secrets.token_hex(4)}@eval.invalid",
+            "password": secrets.token_urlsafe(16),
+            "organization_name": f"eval-{label}",
+        },
+    )
+    response.raise_for_status()
+    client.headers["Cookie"] = f"nl_session={response.cookies['nl_session']}"
 
 
 def _ingest(client: httpx2.Client, edge_cases: dict[str, str]) -> dict[str, Any]:

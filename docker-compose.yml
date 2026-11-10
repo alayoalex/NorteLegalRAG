@@ -10,6 +10,8 @@ x-backend: &backend
     DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-norte}:${POSTGRES_PASSWORD:-norte_dev}@postgres:5432/${POSTGRES_DB:-norte_legal}
     REDIS_URL: redis://redis:6379/0
     OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    # En local la interfaz se sirve por HTTP; docker-compose.prod.yml lo vuelve a activar.
+    SESSION_COOKIE_SECURE: "false"
   volumes:
     - blobs:/data/blobs
 
